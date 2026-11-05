@@ -115,9 +115,11 @@ is written raw, including tab, carriage return, NUL, and any valid UTF-8.
 
 Invalid UTF-8 is the other failure that costs the whole scrape. The writer
 checks each label value and returns `error.InvalidUtf8` rather than emit
-a document that is structurally fine and semantically poisoned. The buffer is
-left holding the bytes written before the bad one, so a caller that streams to
-a socket should render into a buffer first.
+a document that is structurally fine and semantically poisoned. A label value
+is caught as it is written, so that one failure can leave a partial line in the
+buffer; every other check runs before the first byte, so a bad name, kind, or
+bucket set writes nothing. A caller that streams to a socket should render into
+a buffer first.
 
 # Families
 
@@ -180,9 +182,10 @@ compared byte for byte.
 
 The descriptor carries the bucket upper bounds in `limits`. Each sample carries
 its cumulative counts, its sum, and its total: `counts[i]` is the number of
-observations at or below `limits[i]`, and the last count is the total. The
-caller keeps them; this library writes the bytes, including the implicit `+Inf`
-bucket every classic histogram has.
+observations at or below `limits[i]`. The last count is at most the total,
+because an observation above the top limit belongs only to the implicit `+Inf`
+bucket, which is written from `count`. The caller keeps all of it; this library
+writes the bytes.
 
 ```zig
 {{ load_data(path="examples/histogram.zig", format = "plain") | trim_end }}
@@ -197,14 +200,17 @@ An empty `limits` slice is legal: the family is one `+Inf` bucket, `_sum`, and
 
 ## What the writer checks
 
-Each sample's counts are checked at run time, and `error.InvalidBuckets` comes back when any of these fails, in every
-build mode, and the comptime door turns the limit check into a compile error:
+Every check runs before the first byte is written, so a rejected family leaves
+the writer exactly as it found it. `error.InvalidBuckets` comes back when any of
+these fails, in every build mode; the comptime door also turns the limit check
+into a compile error.
 
 - `counts.len` equals `limits.len`.
 - The limits are finite and strictly ascending, so no `NaN`, no repeat, and no
   `+Inf`, which the implicit bucket already owns.
 - The counts are monotone non-decreasing.
-- The last count equals `count`.
+- The last count is at most `count`. It is equal when every observation is at
+  or below the top limit, and lower when the family has a tail.
 
 A histogram that emits wrong bytes is the failure this package exists to
 prevent, so a mismatched pair of slices is an error rather than an assertion

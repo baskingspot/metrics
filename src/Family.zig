@@ -53,12 +53,30 @@ pub fn writeSamples(
     try emitSamples(w, self.name, samples);
 }
 
+/// Every check that can reject the family, before a byte is written, so a
+/// failure leaves the writer as it found it. The label-name and `le` checks are
+/// comptime and run once per label type; the counts are values.
+fn checkHistograms(limits: []const f64, histograms: anytype) errors.Error!void {
+    if (comptime isTuple(@TypeOf(histograms))) {
+        inline for (histograms) |histogram| try checkOneHistogram(limits, histogram);
+    } else {
+        for (histograms) |histogram| try checkOneHistogram(limits, histogram);
+    }
+}
+
+fn checkOneHistogram(limits: []const f64, histogram: anytype) errors.Error!void {
+    comptime checkLabelNames(@TypeOf(histogram.labels));
+    comptime checkNoLe(@TypeOf(histogram.labels));
+    try checkCounts(limits, histogram.counts, histogram.count);
+}
+
 pub fn writeHistograms(
     comptime self: Family,
     w: *Io.Writer,
     histograms: anytype,
 ) errors.Error!void {
     comptime checkComptime(self, .histograms);
+    try checkHistograms(self.limits, histograms);
     try w.writeAll(comptime headerBlock(self));
     try emitHistograms(w, self.name, self.limits, comptime leTexts(self.limits), histograms);
 }
@@ -73,6 +91,7 @@ pub fn writeSamplesRuntime(self: Family, w: *Io.Writer, samples: anytype) errors
 
 pub fn writeHistogramsRuntime(self: Family, w: *Io.Writer, histograms: anytype) errors.Error!void {
     try checkRuntime(self, .histograms);
+    try checkHistograms(self.limits, histograms);
     try writeHeaderLines(w, self);
     try emitHistograms(w, self.name, self.limits, null, histograms);
 }
@@ -131,9 +150,7 @@ fn emitHistogram(
     comptime le_table: anytype,
     histogram: anytype,
 ) errors.Error!void {
-    comptime checkNoLe(@TypeOf(histogram.labels));
     const counts = histogram.counts;
-    try checkCounts(limits, counts, histogram.count);
 
     var le_buffer: [le_size]u8 = undefined;
     if (comptime isTuple(@TypeOf(counts))) {
@@ -145,8 +162,8 @@ fn emitHistogram(
             try writeBucket(w, name, histogram.labels, limits, le_table, &le_buffer, count, i);
         }
     }
-    // The implicit bucket. `checkCounts` has proven its count equals the last
-    // cumulative count.
+    // The implicit bucket, from the total. The last finite count may be lower:
+    // observations above the top limit land only here.
     try writeBucketLine(w, name, histogram.labels, "+Inf", histogram.count);
     try writeSuffixed(w, name, "_sum", histogram.labels, histogram.sum);
     try writeSuffixed(w, name, "_count", histogram.labels, histogram.count);
@@ -249,6 +266,10 @@ fn writeHeaderLines(w: *Io.Writer, f: Family) errors.Error!void {
 /// The `le` values for a comptime family, formatted once at compile time.
 fn leTexts(comptime limits: []const f64) [limits.len][le_size]u8 {
     comptime {
+        // Each limit formats through `{e}`, which costs branches against the
+        // default quota fast enough that a twenty-bucket histogram failed to
+        // compile. Scale with the table.
+        @setEvalBranchQuota(1000 + limits.len * 1000);
         var table: [limits.len][le_size]u8 = @splat(@splat(0));
         for (limits, 0..) |limit, i| {
             var w: Io.Writer = .fixed(&table[i]);
@@ -299,8 +320,15 @@ fn checkRuntime(f: Family, work: Work) errors.Error!void {
 }
 
 fn checkLabelNames(comptime LabelStruct: type) void {
+    // A struct with enough long field names passes 2000 branches; scale with
+    // the field count rather than guessing.
+    @setEvalBranchQuota(1000 + compat.fieldCount(LabelStruct) * 1000);
     inline for (0..comptime compat.fieldCount(LabelStruct)) |i| {
         const label_name = comptime compat.fieldName(LabelStruct, i);
+        comptime if (names.hasReservedPrefix(label_name)) {
+            @compileError("prometheus: label name \"" ++ label_name ++
+                "\" starts with \"__\", which is reserved");
+        };
         comptime if (!names.isValidLabelName(label_name)) {
             @compileError("prometheus: label name \"" ++ label_name ++
                 "\" is not [a-zA-Z_][a-zA-Z0-9_]*");
@@ -324,8 +352,8 @@ fn checkLimits(limits: []const f64) error{InvalidBuckets}!void {
     }
 }
 
-/// Cumulative counts, one per limit, ending at the total. The counts are
-/// whatever the caller has: a slice, a fixed array, or a tuple literal.
+/// Cumulative counts, one per limit, ending at or below the total. The counts
+/// are whatever the caller has: a slice, a fixed array, or a tuple literal.
 fn checkCounts(
     limits: []const f64,
     counts: anytype,
@@ -338,7 +366,9 @@ fn checkCounts(
     } else {
         for (counts, 0..) |count, i| try checkCount(&previous, count, i);
     }
-    if (counts.len > 0 and counts[counts.len - 1] != total) return error.InvalidBuckets;
+    // The last finite bucket holds the observations at or below the top limit;
+    // anything above it is the tail that the implicit `+Inf` bucket carries.
+    if (counts.len > 0 and counts[counts.len - 1] > total) return error.InvalidBuckets;
 }
 
 fn checkCount(previous: *u64, count: u64, index: usize) error{InvalidBuckets}!void {

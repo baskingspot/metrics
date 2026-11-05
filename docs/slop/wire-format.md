@@ -77,8 +77,10 @@ return, NUL, and any valid UTF-8 stay raw. Invalid UTF-8 returns
   with an `.expect` naming the message. The recipe fails if a snippet compiles
   or fails for the wrong reason.
 - `just check-corpus N SEED` renders N random documents through `runtime`, one
-  per file and the set as one txtar, and pipes each to `prom2json`. 1,200
-  documents across four seeds pass.
+  per file and the set as one txtar, and pipes each to `prom2json`.
+- `just check-golden` splits the golden archive and pipes every document
+  through `prom2json`, so the oracle sees the comptime door's bytes and the
+  integer values, which the corpus never produces.
 - `just bench` reports bytes per second for four cases: 2 labels, 8 labels, an
   escape-heavy label, and a 12-bucket histogram with four samples.
 

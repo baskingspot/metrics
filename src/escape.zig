@@ -32,6 +32,9 @@ pub fn writeHelpText(w: *Io.Writer, value: []const u8) (Io.Writer.Error || Error
 /// so it needs the escaped bytes as a value rather than as a write.
 pub fn escapeHelp(comptime text: []const u8) []const u8 {
     comptime {
+        // The `++` loop costs branches per byte against the default quota,
+        // which ran out at about 2 KB of HELP.
+        @setEvalBranchQuota(1000 + text.len * 1000);
         if (!utf8ValidateSlice(text)) {
             @compileError("prometheus: HELP text is not valid UTF-8");
         }

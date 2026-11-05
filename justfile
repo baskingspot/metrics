@@ -48,6 +48,39 @@ check-cold:
     zig build test
     zig build bench -- --count=1
 
+# The goldens are the comptime door's bytes, and the corpus never produces an
+# integer value, so without this the oracle would only ever see floats from the
+# runtime door. It splits the archive on the txtar markers, which is safe
+# because a golden document holds no NUL.
+[doc("Pipe every golden document through prom2json, so the comptime door and the integer values reach the oracle on both lanes")]
+[group("test")]
+check-golden:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    out=$(mktemp -d)
+    trap 'rm -rf "$out"' EXIT
+    current=""
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            "-- "*" --")
+                current=${line#-- }
+                current=${current% --}
+                : > "$out/$current"
+                ;;
+            *)
+                if [ -n "$current" ]; then printf '%s\n' "$line" >> "$out/$current"; fi
+                ;;
+        esac
+    done < test/testdata/golden.txtar
+    for doc in "$out"/*.expected; do
+        if ! prom2json "$doc" > /dev/null; then
+            echo "prom2json rejected $doc" >&2
+            cat "$doc" >&2
+            exit 1
+        fi
+    done
+    echo "golden: $(ls "$out" | wc -l | tr -d ' ') documents accepted by prom2json"
+
 [doc("Compile the snippets in test/compile_fail and fail unless each is rejected at comptime with its own message")]
 [group("test")]
 check-compile-fail:
@@ -99,7 +132,7 @@ fmt:
 
 [doc("The per-version gate: the module suite, the oracle fixture, and the compile-fail snippets, on either compiler")]
 [group("ci")]
-check: test check-compile-fail
+check: test check-compile-fail check-golden
 
 [doc("Build the site into zig-out/site/prometheus/: the guide (Zola, from docs/) and the API reference (docgen JSON, rendered by the theme's api.html) under api/")]
 [group("docs")]

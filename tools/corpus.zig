@@ -209,6 +209,8 @@ fn emit_histogram(w: *Io.Writer, arena: Allocator, random: std.Random) !void {
         cumulative += random.intRangeAtMost(u64, 0, 100);
         counts[i] = cumulative;
     }
+    // A tail above the top limit is legal and belongs only to `+Inf`.
+    const total = cumulative + random.intRangeAtMost(u64, 0, 5);
     const sample = [1]Histogram{.{
         .labels = .{
             .a = try label_text(arena, random),
@@ -216,7 +218,7 @@ fn emit_histogram(w: *Io.Writer, arena: Allocator, random: std.Random) !void {
         },
         .counts = counts[0..bucket_count],
         .sum = random.float(f64) * 1000,
-        .count = cumulative,
+        .count = total,
     }};
     try prometheus.runtime.histogramFamily(w, family, &sample);
 }

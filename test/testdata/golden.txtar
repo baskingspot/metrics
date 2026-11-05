@@ -54,6 +54,48 @@ latency_seconds_bucket{method="GET",le="1e+06"} 1
 latency_seconds_bucket{method="GET",le="+Inf"} 1
 latency_seconds_sum{method="GET"} 0.001
 latency_seconds_count{method="GET"} 1
+-- histogram_tail.expected --
+# TYPE latency_seconds histogram
+latency_seconds_bucket{le="10"} 1
+latency_seconds_bucket{le="20"} 2
+latency_seconds_bucket{le="+Inf"} 3
+latency_seconds_sum 45
+latency_seconds_count 3
+-- histogram_thirty.expected --
+# TYPE latency_seconds histogram
+latency_seconds_bucket{le="1"} 1
+latency_seconds_bucket{le="2"} 2
+latency_seconds_bucket{le="3"} 3
+latency_seconds_bucket{le="4"} 4
+latency_seconds_bucket{le="5"} 5
+latency_seconds_bucket{le="6"} 6
+latency_seconds_bucket{le="7"} 7
+latency_seconds_bucket{le="8"} 8
+latency_seconds_bucket{le="9"} 9
+latency_seconds_bucket{le="10"} 10
+latency_seconds_bucket{le="11"} 11
+latency_seconds_bucket{le="12"} 12
+latency_seconds_bucket{le="13"} 13
+latency_seconds_bucket{le="14"} 14
+latency_seconds_bucket{le="15"} 15
+latency_seconds_bucket{le="16"} 16
+latency_seconds_bucket{le="17"} 17
+latency_seconds_bucket{le="18"} 18
+latency_seconds_bucket{le="19"} 19
+latency_seconds_bucket{le="20"} 20
+latency_seconds_bucket{le="21"} 21
+latency_seconds_bucket{le="22"} 22
+latency_seconds_bucket{le="23"} 23
+latency_seconds_bucket{le="24"} 24
+latency_seconds_bucket{le="25"} 25
+latency_seconds_bucket{le="26"} 26
+latency_seconds_bucket{le="27"} 27
+latency_seconds_bucket{le="28"} 28
+latency_seconds_bucket{le="29"} 29
+latency_seconds_bucket{le="30"} 30
+latency_seconds_bucket{le="+Inf"} 30
+latency_seconds_sum 465
+latency_seconds_count 30
 -- values.expected --
 # TYPE values untyped
 values{case="one_tenth"} 0.1

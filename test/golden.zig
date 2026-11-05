@@ -167,6 +167,46 @@ test "le uses the same formatter as a sample value" {
     }});
 }
 
+// Observations above the top limit land only in the implicit `+Inf` bucket,
+// so the last finite count is below the total.
+test "a histogram with a tail above its top limit" {
+    try expectHistograms("histogram_tail.expected", .{
+        .name = "latency_seconds",
+        .kind = .histogram,
+        .limits = &.{ 10, 20 },
+    }, &.{.{
+        .labels = .{},
+        .counts = &[_]u64{ 1, 2 },
+        .sum = 45,
+        .count = 3,
+    }});
+}
+
+// Twenty buckets is an ordinary layout, and the comptime door used to run out
+// of branches formatting the `le` table at seventeen.
+test "a histogram with thirty limits" {
+    const limits = comptime blk: {
+        var out: [30]f64 = undefined;
+        for (0..30) |i| out[i] = @floatFromInt(i + 1);
+        break :blk out;
+    };
+    const counts = comptime blk: {
+        var out: [30]u64 = undefined;
+        for (0..30) |i| out[i] = i + 1;
+        break :blk out;
+    };
+    try expectHistograms("histogram_thirty.expected", .{
+        .name = "latency_seconds",
+        .kind = .histogram,
+        .limits = &limits,
+    }, &.{.{
+        .labels = .{},
+        .counts = &counts,
+        .sum = 465,
+        .count = 30,
+    }});
+}
+
 test "three families in one document do not interleave" {
     const expected = fixtures.get("three_families.expected");
 
@@ -279,13 +319,17 @@ test "the runtime door reports what the comptime door refuses to compile" {
         &.{.{ .labels = .{}, .counts = notCumulative, .sum = 0, .count = 1 }},
     ));
 
-    const twoBuckets = &[_]u64{ 1, 2 };
+    const overTotal = &[_]u64{ 1, 4 };
     var w11: Io.Writer = .fixed(&buffer);
     try testing.expectError(error.InvalidBuckets, prometheus.runtime.histogramFamily(
         &w11,
         .{ .name = "ok", .kind = .histogram, .limits = &.{ 1, 2 } },
-        &.{.{ .labels = .{}, .counts = twoBuckets, .sum = 0, .count = 3 }},
+        &.{.{ .labels = .{}, .counts = overTotal, .sum = 0, .count = 3 }},
     ));
+
+    // Every numeric check runs before the header, so a rejected family writes
+    // nothing at all.
+    try testing.expectEqualStrings("", w11.buffered());
 
     const nanLimit = &[_]f64{std.math.nan(f64)};
     var w12: Io.Writer = .fixed(&buffer);
@@ -337,11 +381,13 @@ test "property: a histogram document keeps every bucket invariant" {
             limits[i] = previous;
             counts[i] = cumulative;
         }
+        // A tail above the top limit is legal and lands only in `+Inf`.
+        const tail = random.intRangeAtMost(u64, 0, 3);
         const buckets = [1]HistogramSample{.{
             .labels = .{ .k = "v" },
             .counts = counts[0..bucket_count],
             .sum = random.float(f64) * 1000,
-            .count = cumulative,
+            .count = cumulative + tail,
         }};
         const f = Family{
             .name = "h",
@@ -376,7 +422,8 @@ test "property: a histogram document keeps every bucket invariant" {
 
         const inf_line = lines[1 + bucket_count];
         try testing.expect(std.mem.startsWith(u8, inf_line, "h_bucket{k=\"v\",le=\"+Inf\"} "));
-        try testing.expectEqual(cumulative, try std.fmt.parseInt(u64, lineValue(inf_line), 10));
+        const total = cumulative + tail;
+        try testing.expectEqual(total, try std.fmt.parseInt(u64, lineValue(inf_line), 10));
 
         try testing.expect(std.mem.startsWith(u8, lines[2 + bucket_count], "h_sum{k=\"v\"} "));
         try testing.expectEqual(
@@ -386,7 +433,7 @@ test "property: a histogram document keeps every bucket invariant" {
 
         try testing.expect(std.mem.startsWith(u8, lines[3 + bucket_count], "h_count{k=\"v\"} "));
         try testing.expectEqual(
-            cumulative,
+            total,
             try std.fmt.parseInt(u64, lineValue(lines[3 + bucket_count]), 10),
         );
     }
