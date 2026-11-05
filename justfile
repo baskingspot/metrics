@@ -60,7 +60,7 @@ lint:
     baskingspot-lint src
     zig fmt --check src test tools build.zig build.zig.zon
     nix fmt -- --ci
-    oxfmt --check README.md AGENTS.md CHANGELOG.md .github .oxfmtrc.jsonc
+    oxfmt --check README.md AGENTS.md CHANGELOG.md docs/content docs/config.toml docs/static .github .oxfmtrc.jsonc wrangler.jsonc
     actionlint
     zizmor .
     just --fmt --check
@@ -70,13 +70,34 @@ lint:
 fmt:
     zig fmt src test tools build.zig build.zig.zon
     nix fmt
-    oxfmt README.md AGENTS.md CHANGELOG.md .github .oxfmtrc.jsonc
+    oxfmt README.md AGENTS.md CHANGELOG.md docs/content docs/config.toml docs/static .github .oxfmtrc.jsonc wrangler.jsonc
     just --fmt
 
 [doc("The per-version gate: the module suite, the oracle fixture, and the compile-fail snippets, on either compiler")]
 [group("ci")]
 check: test check-fixture check-compile-fail
 
-[doc("Everything CI runs: the gate, lint, and the seeded corpus")]
+[doc("Build the site into zig-out/site/prometheus/: the guide (Zola, from docs/) and the API reference (docgen JSON, rendered by the theme's api.html) under api/")]
+[group("docs")]
+doc: api
+    baskingspot-docs build prometheus
+
+[doc("Edit the guide with live reload (http://127.0.0.1:1111), API reference included")]
+[group("docs")]
+guide: api
+    baskingspot-docs serve prometheus
+
+# The API reference data. docgen comes from the baskingspot flake's docs shell,
+# so this is not a Zig build dependency.
+[private]
+api:
+    docgen --root src/root.zig --title prometheus --repo-url https://github.com/baskingspot/prometheus --rev main --format json --out docs/data
+
+[doc("Deploy the rendered docs to Cloudflare as an assets-only Worker (config in wrangler.jsonc). Needs CLOUDFLARE_API_TOKEN in the environment")]
+[group("docs")]
+doc-deploy: doc
+    wrangler deploy
+
+[doc("Everything CI runs: the gate, lint, the seeded corpus, and the site build")]
 [group("ci")]
-ci: check lint check-corpus
+ci: check lint check-corpus doc

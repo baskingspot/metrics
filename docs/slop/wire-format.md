@@ -51,9 +51,12 @@ valid UTF-8 stay raw. Invalid UTF-8 returns `error.InvalidUtf8` instead of
 producing a document the parser rejects, because one bad label value costs
 every series in the scrape.
 
-Interleaving: `family` writes the header and returns a handle that owns the
-write. There is no way to hold two handles over one writer, so a family's
-samples are contiguous by construction.
+Interleaving: `family` writes the header and returns a handle, and every sample
+line for that family goes through it. Two calls to `family` on one writer still
+compile, because Zig has no move semantics and a `*std.Io.Writer` is copyable,
+so contiguity is a property of the API's shape plus a golden test, not a
+compile error. The compile-fail cases cover what comptime can prove: the kind
+paired with the handle, and the name grammars.
 
 ## The oracle
 
