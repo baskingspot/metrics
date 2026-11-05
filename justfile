@@ -34,6 +34,20 @@ check-corpus N="50" SEED="1":
     done
     echo "corpus: $(ls "$out"/*.prom | wc -l | tr -d ' ') documents accepted by prom2json (seed {{ SEED }})"
 
+# A lazy dependency that developer-only code unwraps compiles fine with a warm
+# `zig-pkg` and panics on the first configure pass of a cold one: the fetch
+# happens after build.zig returns null once. CI caught exactly that here, and
+# no local run could, so the check is a recipe rather than a habit. It is not
+# part of `ci` because a full rebuild is not a few seconds.
+[doc("Cold-cache gate: delete zig-pkg and .zig-cache, then build the tests and the benchmark. Catches a lazy dependency unwrapped instead of guarded")]
+[group("test")]
+check-cold:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    rm -rf zig-pkg .zig-cache
+    zig build test
+    zig build bench -- --count=1
+
 [doc("Compile the snippets in test/compile_fail and fail unless each is rejected at comptime with its own message")]
 [group("test")]
 check-compile-fail:
