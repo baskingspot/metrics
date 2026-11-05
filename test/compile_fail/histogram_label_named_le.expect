@@ -1,1 +1,1 @@
-prometheus: a histogram label set cannot contain `le`
+prometheus: a histogram label set cannot contain "le"

@@ -1,17 +1,16 @@
 //! Emit random exposition documents for the oracle gate.
 //!
-//! `corpus OUTDIR COUNT SEED` writes COUNT documents into OUTDIR. Every one is
-//! produced by the library, so a document Prometheus's parser rejects is a
-//! library bug, and the seed reproduces the run.
+//! `corpus OUTDIR COUNT SEED` writes COUNT documents into OUTDIR, one file per
+//! document for the pipe, and the same set as one txtar archive so a failing
+//! run leaves a single replayable artifact.
+//!
+//! Every document comes from the `runtime` door, because that is the one that
+//! takes a composed name and random help text. The comptime door's own bytes
+//! are the golden fixtures' job.
 //!
 //! A development tool, not library code: it allocates, writes files, and is
 //! exempt from the formatter and linter rules per the org's load-bearing-code
 //! definition.
-//!
-//! Label shapes are a fixed set of structs, because a label name is a comptime
-//! struct field in the API. Everything a bug hides in still varies: label
-//! values, escapes, control characters, emoji, sample counts, and values,
-//! including the awkward f64s.
 
 const std = @import("std");
 const prometheus = @import("prometheus");
@@ -29,26 +28,7 @@ const fragments = [_][]const u8{
     "",  " ", "-", "=", "{",
 };
 
-const metric_names = [_][]const u8{
-    "fixture_a",       "fixture_b_total", "fixture_c", "fixture_d",
-    "fixture_e_bytes", "fixture_f",       "fixture_g", "fixture_h",
-    "fixture_i",       "fixture_j",       "fixture_k", "fixture_l",
-};
-
-/// Compile-time family descriptors: the HELP cases that matter, including the
-/// escapes, control characters, emoji, and the empty help.
-const family_descriptors = [_]prometheus.Family{
-    .{ .name = "fixture_a", .kind = .counter, .help = "A counter." },
-    .{ .name = "fixture_b_total", .kind = .counter, .help = "" },
-    .{ .name = "fixture_c", .kind = .gauge, .help = "Plain help." },
-    .{ .name = "fixture_d", .kind = .gauge, .help = "Back\\slash and \"quote\" and more." },
-    .{ .name = "fixture_e_bytes", .kind = .untyped, .help = "New\nline, tab\there, cr\rhere." },
-    .{ .name = "fixture_f", .kind = .gauge, .help = "é 日本 🦎" },
-    .{ .name = "fixture_g", .kind = .untyped, .help = "ends with a backslash \\" },
-    .{ .name = "fixture_h", .kind = .gauge, .help = "\n" },
-    .{ .name = "fixture_latency_seconds", .kind = .histogram, .help = "Latency." },
-    .{ .name = "fixture_payload_bytes", .kind = .histogram, .help = "" },
-};
+const kinds = [_]prometheus.Kind{ .counter, .gauge, .untyped };
 
 const edge_values = [_]f64{
     0,             -0.0,           1e300,         5e-324,    1e6,                0.0001,
@@ -56,7 +36,6 @@ const edge_values = [_]f64{
     math.inf(f64), -math.inf(f64), math.nan(f64),
 };
 
-/// One document is at most 12 samples of a few hundred bytes each.
 const document_capacity = 64 * 1024;
 
 pub fn main(init: std.process.Init) !void {
@@ -74,139 +53,180 @@ pub fn main(init: std.process.Init) !void {
     const random = prng.random();
 
     try Io.Dir.cwd().createDirPath(init.io, outdir);
+
+    var archive: std.ArrayList(u8) = .empty;
+    try archive.appendSlice(arena, "Prometheus corpus. Each section is one document, and the seed is in the comment.\n");
+
     for (0..count) |index| {
         const text = try document(arena, random);
-        var name_buffer: [256]u8 = undefined;
-        const name = try std.fmt.bufPrint(&name_buffer, "{s}/doc-{d:0>5}.prom", .{ outdir, index });
-        try Io.Dir.cwd().writeFile(init.io, .{ .sub_path = name, .data = text });
+        var name_buffer: [32]u8 = undefined;
+        const name = try std.fmt.bufPrint(&name_buffer, "doc-{d:0>5}", .{index});
+        try archive.appendSlice(arena, "-- ");
+        try archive.appendSlice(arena, name);
+        try archive.appendSlice(arena, " --\n");
+        try archive.appendSlice(arena, text);
+
+        var path_buffer: [256]u8 = undefined;
+        const path = try std.fmt.bufPrint(&path_buffer, "{s}/{s}.prom", .{ outdir, name });
+        try Io.Dir.cwd().writeFile(init.io, .{ .sub_path = path, .data = text });
     }
+
+    var archive_path: [256]u8 = undefined;
+    const txtar = try std.fmt.bufPrint(&archive_path, "{s}/corpus.txtar", .{outdir});
+    try Io.Dir.cwd().writeFile(init.io, .{ .sub_path = txtar, .data = archive.items });
+
     std.debug.print("corpus: {d} documents in {s}, seed {d}\n", .{ count, outdir, seed });
 }
 
 fn document(arena: Allocator, random: std.Random) ![]const u8 {
     var w: Io.Writer = .fixed(try arena.alloc(u8, document_capacity));
-    // One document is either bare samples or families. Mixing the two can put a
-    // second header-less series in a family that already has a TYPE line, which
-    // is legal syntax and not what this gate is looking for.
+    // One document is either bare families or histograms. Mixing them can put a
+    // header-less series in a family that already has a TYPE line.
     if (random.boolean()) {
-        for (0..random.intRangeAtMost(usize, 1, 12)) |_| {
-            const name = metric_names[random.uintLessThan(usize, metric_names.len)];
-            try emit_sample(&w, name, arena, random);
+        for (0..random.intRangeAtMost(usize, 1, 6)) |_| {
+            try emit_family(&w, arena, random);
         }
     } else {
-        // A family descriptor is comptime, so the help text comes from a fixed
-        // table. HELP escaping has a small set of interesting cases and each
-        // one is here; the values and label text stay random. Each name goes
-        // out at most once: a second HELP line for one name is a parse error,
-        // which is the oracle doing its job.
-        var emitted: usize = 0;
-        inline for (family_descriptors) |descriptor| {
-            if (emitted < 4 and random.boolean()) {
-                emitted += 1;
-                if (comptime descriptor.kind == .histogram) {
-                    const handle = try prometheus.histogramFamily(&w, descriptor);
-                    for (0..random.intRangeAtMost(usize, 0, 3)) |_| {
-                        try emit_histogram_sample(&handle, arena, random);
-                    }
-                } else {
-                    const handle = try prometheus.family(&w, descriptor);
-                    for (0..random.intRangeAtMost(usize, 0, 5)) |_| {
-                        try emit_family_sample(&handle, arena, random);
-                    }
-                }
-            }
+        for (0..random.intRangeAtMost(usize, 1, 4)) |_| {
+            try emit_histogram(&w, arena, random);
         }
     }
     return w.buffered();
 }
 
-fn emit_family_sample(handle: anytype, arena: Allocator, random: std.Random) !void {
+fn emit_family(w: *Io.Writer, arena: Allocator, random: std.Random) !void {
+    const family = prometheus.Family{
+        .name = try metric_name(arena, random),
+        .kind = kinds[random.uintLessThan(usize, kinds.len)],
+        .help = if (random.boolean()) try label_text(arena, random) else "",
+    };
     switch (random.uintLessThan(u8, 4)) {
-        0 => try emit_value(handle, .{}, random),
-        1 => try emit_value(handle, .{ .k = try label_text(arena, random) }, random),
-        2 => try emit_value(handle, .{
-            .a = try label_text(arena, random),
-            .b = try label_text(arena, random),
-        }, random),
-        else => try emit_value(handle, .{
-            .method = try label_text(arena, random),
-            .code = random.int(u16),
-            .host = try label_text(arena, random),
-        }, random),
+        0 => {
+            const samples = try one_sample(arena, random);
+            try prometheus.runtime.family(w, family, samples);
+        },
+        1 => {
+            const samples = try two_samples(arena, random);
+            try prometheus.runtime.family(w, family, samples);
+        },
+        2 => {
+            const samples = try three_samples(arena, random);
+            try prometheus.runtime.family(w, family, samples);
+        },
+        else => {
+            const samples = try no_samples(arena, random);
+            try prometheus.runtime.family(w, family, samples);
+        },
     }
 }
 
-fn emit_histogram_sample(handle: anytype, arena: Allocator, random: std.Random) !void {
+const NoLabels = struct {};
+const OneLabel = struct { k: []const u8 };
+const TwoLabels = struct { a: []const u8, b: []const u8 };
+const ThreeLabels = struct { method: []const u8, code: u16, host: []const u8 };
+
+fn Sample(comptime Labels: type) type {
+    // f64, so a random bit pattern of them is the value coverage: NaN, the
+    // infinities, subnormals, and the exponent edges. Integers take a different
+    // branch of the writer and the golden fixtures pin them.
+    return struct {
+        labels: Labels,
+        value: f64,
+    };
+}
+
+fn no_samples(arena: Allocator, random: std.Random) ![]const Sample(NoLabels) {
+    const samples = try arena.alloc(Sample(NoLabels), random.intRangeAtMost(usize, 0, 4));
+    for (samples) |*sample| sample.* = .{ .labels = .{}, .value = random_value(random) };
+    return samples;
+}
+
+fn one_sample(arena: Allocator, random: std.Random) ![]const Sample(OneLabel) {
+    const samples = try arena.alloc(Sample(OneLabel), random.intRangeAtMost(usize, 0, 4));
+    for (samples) |*sample| {
+        sample.* = .{
+            .labels = .{ .k = try label_text(arena, random) },
+            .value = random_value(random),
+        };
+    }
+    return samples;
+}
+
+fn two_samples(arena: Allocator, random: std.Random) ![]const Sample(TwoLabels) {
+    const samples = try arena.alloc(Sample(TwoLabels), random.intRangeAtMost(usize, 0, 4));
+    for (samples) |*sample| {
+        sample.* = .{
+            .labels = .{
+                .a = try label_text(arena, random),
+                .b = try label_text(arena, random),
+            },
+            .value = random_value(random),
+        };
+    }
+    return samples;
+}
+
+fn three_samples(arena: Allocator, random: std.Random) ![]const Sample(ThreeLabels) {
+    const samples = try arena.alloc(Sample(ThreeLabels), random.intRangeAtMost(usize, 0, 4));
+    for (samples) |*sample| {
+        sample.* = .{
+            .labels = .{
+                .method = try label_text(arena, random),
+                .code = random.int(u16),
+                .host = try label_text(arena, random),
+            },
+            .value = random_value(random),
+        };
+    }
+    return samples;
+}
+
+fn emit_histogram(w: *Io.Writer, arena: Allocator, random: std.Random) !void {
     var limits: [8]f64 = undefined;
-    var counts: [8]u64 = undefined;
     const bucket_count = random.intRangeAtMost(usize, 0, limits.len);
     var previous: f64 = 0;
-    var cumulative: u64 = 0;
     for (0..bucket_count) |i| {
         // Strictly ascending: every step is at least 1.
         previous += random.float(f64) * 1000 + 1;
-        cumulative += random.intRangeAtMost(u64, 0, 100);
         limits[i] = previous;
+    }
+    const family = prometheus.Family{
+        .name = try metric_name(arena, random),
+        .kind = .histogram,
+        .help = if (random.boolean()) try label_text(arena, random) else "",
+        .limits = limits[0..bucket_count],
+    };
+
+    const Histogram = struct {
+        labels: TwoLabels,
+        counts: []const u64,
+        sum: f64,
+        count: u64,
+    };
+    var counts: [8]u64 = undefined;
+    var cumulative: u64 = 0;
+    for (0..bucket_count) |i| {
+        cumulative += random.intRangeAtMost(u64, 0, 100);
         counts[i] = cumulative;
     }
-    const buckets: prometheus.Family.Buckets = .{
-        .limits = limits[0..bucket_count],
+    const sample = [1]Histogram{.{
+        .labels = .{
+            .a = try label_text(arena, random),
+            .b = try label_text(arena, random),
+        },
         .counts = counts[0..bucket_count],
         .sum = random.float(f64) * 1000,
         .count = cumulative,
+    }};
+    try prometheus.runtime.histogramFamily(w, family, &sample);
+}
+
+fn random_value(random: std.Random) f64 {
+    return switch (random.uintLessThan(u8, 4)) {
+        0 => @bitCast(random.int(u64)),
+        1, 2 => edge_values[random.uintLessThan(usize, edge_values.len)],
+        else => random.float(f64) * 1e6,
     };
-    switch (random.uintLessThan(u8, 3)) {
-        0 => try handle.write(.{}, buckets),
-        1 => try handle.write(.{ .k = try label_text(arena, random) }, buckets),
-        else => try handle.write(.{
-            .method = try label_text(arena, random),
-            .code = random.int(u16),
-            .host = try label_text(arena, random),
-        }, buckets),
-    }
-}
-
-fn emit_value(handle: anytype, labels: anytype, random: std.Random) !void {
-    switch (random.uintLessThan(u8, 3)) {
-        0 => try handle.write(labels, random.int(u64)),
-        1 => try handle.write(labels, random.int(i64)),
-        else => try handle.write(labels, edge_value(random)),
-    }
-}
-
-fn emit_sample(w: *Io.Writer, name: []const u8, arena: Allocator, random: std.Random) !void {
-    switch (random.uintLessThan(u8, 5)) {
-        0 => try emit(w, name, .{}, random),
-        1 => try emit(w, name, .{ .k = try label_text(arena, random) }, random),
-        2 => try emit(w, name, .{
-            .a = try label_text(arena, random),
-            .b = try label_text(arena, random),
-        }, random),
-        3 => try emit(w, name, .{
-            .method = try label_text(arena, random),
-            .code = random.int(u16),
-            .host = try label_text(arena, random),
-        }, random),
-        else => try emit(w, name, .{
-            .a = try label_text(arena, random),
-            .b = try label_text(arena, random),
-            .c = try label_text(arena, random),
-            .d = try label_text(arena, random),
-        }, random),
-    }
-}
-
-/// The value type is chosen here so each call site is monomorphic.
-fn emit(w: *Io.Writer, name: []const u8, labels: anytype, random: std.Random) !void {
-    switch (random.uintLessThan(u8, 3)) {
-        0 => try prometheus.sample(w, name, labels, random.int(u64)),
-        1 => try prometheus.sample(w, name, labels, random.int(i64)),
-        else => try prometheus.sample(w, name, labels, edge_value(random)),
-    }
-}
-
-fn edge_value(random: std.Random) f64 {
-    return edge_values[random.uintLessThan(usize, edge_values.len)];
 }
 
 /// Valid UTF-8 only: a document that a correct writer must refuse belongs in
@@ -217,4 +237,15 @@ fn label_text(arena: Allocator, random: std.Random) ![]const u8 {
         try text.appendSlice(arena, fragments[random.uintLessThan(usize, fragments.len)]);
     }
     return text.items;
+}
+
+fn metric_name(arena: Allocator, random: std.Random) ![]const u8 {
+    const prefixes = [_][]const u8{ "corpus_", "fixture_", ":corpus:", "_corpus" };
+    var name: std.ArrayList(u8) = .empty;
+    try name.appendSlice(arena, prefixes[random.uintLessThan(usize, prefixes.len)]);
+    for (0..random.intRangeAtMost(usize, 1, 12)) |_| {
+        const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789_";
+        try name.append(arena, alphabet[random.uintLessThan(usize, alphabet.len)]);
+    }
+    return name.items;
 }

@@ -14,12 +14,38 @@ pub fn build(b: *std.Build) void {
 
     if (b.pkg_hash.len != 0) return;
 
+    // testingx provides the test runner. It is lazy because only the root
+    // build uses it; a consumer never fetches it. On the first configure pass
+    // it is not fetched yet, `lazyDependency` returns null, and the build
+    // runner fetches it and reruns this script.
+    const testingx_dep = b.lazyDependency("testingx", .{ .target = target });
+    const test_runner: ?std.Build.Step.Compile.TestRunner = if (testingx_dep) |dep|
+        .{ .path = dep.path("src/runner.zig"), .mode = .simple }
+    else
+        null;
+
     const test_step = b.step("test", "Run the unit tests and the guide's examples");
 
-    const mod_tests = b.addTest(.{ .root_module = mod });
+    const mod_tests = b.addTest(.{ .root_module = mod, .test_runner = test_runner });
     const run_mod_tests = b.addRunArtifact(mod_tests);
     passthruArgs(b, run_mod_tests);
     test_step.dependOn(&run_mod_tests.step);
+
+    // The golden documents and the runtime door's error paths. The archive is
+    // embedded at compile time, so the case data is a file a person can read
+    // and a diff shows bytes.
+    const golden_mod = b.createModule(.{
+        .root_source_file = b.path("test/golden.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "prometheus", .module = mod },
+            .{ .name = "testingx", .module = testingx_dep.?.module("testingx") },
+        },
+    });
+    const golden_tests = b.addTest(.{ .root_module = golden_mod, .test_runner = test_runner });
+    const run_golden_tests = b.addRunArtifact(golden_tests);
+    test_step.dependOn(&run_golden_tests.step);
 
     // The guide's examples are real programs against the public module, tested
     // with everything else so a guide page cannot show code that does not build.
@@ -29,7 +55,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{.{ .name = "prometheus", .module = mod }},
     });
-    const example_tests = b.addTest(.{ .root_module = examples_mod });
+    const example_tests = b.addTest(.{ .root_module = examples_mod, .test_runner = test_runner });
     const run_example_tests = b.addRunArtifact(example_tests);
     test_step.dependOn(&run_example_tests.step);
 
@@ -37,6 +63,22 @@ pub fn build(b: *std.Build) void {
     // fixed document, and the seeded corpus. Neither is installed.
     addTool(b, mod, target, optimize, "fixture", "tools/fixture.zig");
     addTool(b, mod, target, optimize, "corpus", "tools/corpus.zig");
+
+    // testingx's addBench builds the suite as a ReleaseFast executable. While
+    // the lazy dependency is unfetched `lazyImport` returns null and no bench
+    // step is defined; the build runner fetches it and reruns this script.
+    if (b.lazyImport(@This(), "testingx")) |testingx| {
+        const bench_dep = b.lazyDependency("testingx", .{ .target = target }).?;
+        const bench_step = b.step("bench", "Run the encode benchmarks (ReleaseFast)");
+        const run_bench = testingx.addBench(b, .{
+            .name = "bench-encode",
+            .module = bench_dep.module("testingx"),
+            .root_source_file = b.path("bench/encode.zig"),
+            .imports = &.{.{ .name = "prometheus", .module = mod }},
+        });
+        passthruArgs(b, run_bench);
+        bench_step.dependOn(&run_bench.step);
+    }
 }
 
 fn addTool(

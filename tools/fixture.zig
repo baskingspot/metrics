@@ -1,14 +1,12 @@
 //! The fixture document the oracle gate feeds to Prometheus's parser.
 //!
 //! Every construct the writer can produce, in one document: labels, escapes,
-//! control characters, and the values that formatting gets wrong. A development
-//! tool, so it may use a fixed buffer and write to stdout.
+//! control characters, families, and the values that formatting gets wrong. A
+//! development tool, so it may use a fixed buffer and write to stdout.
 
 const std = @import("std");
-const Io = std.Io;
-const math = std.math;
-
 const prometheus = @import("prometheus");
+const Io = std.Io;
 
 pub fn main(init: std.process.Init) !void {
     var buffer: [16 * 1024]u8 = undefined;
@@ -18,58 +16,66 @@ pub fn main(init: std.process.Init) !void {
 }
 
 fn document(w: *Io.Writer) !void {
-    try prometheus.sample(w, "fixture_requests_total", .{ .method = "GET", .status = "200" }, 1841);
-    try prometheus.sample(w, "fixture_requests_total", .{ .method = "POST", .status = "500" }, 3);
-    try prometheus.sample(w, "fixture_up", .{}, 1);
-    try prometheus.sample(w, "fixture_port", .{ .port = 8080 }, 1);
-    try prometheus.sample(w, "fixture_empty_label", .{ .k = "" }, 1);
-    try prometheus.sample(w, "fixture_escapes", .{ .k = "back\\slash\"quote\nnewline" }, 1);
-    try prometheus.sample(w, "fixture_controls", .{ .k = "tab\ttcr\rc\x00nul" }, 1);
-    try prometheus.sample(w, "fixture_unicode", .{ .k = "é 日本 🦎" }, 1);
-    try prometheus.sample(w, "fixture_zero", .{}, 0);
-    try prometheus.sample(w, "fixture_negative_zero", .{}, -0.0);
-    try prometheus.sample(w, "fixture_nan", .{}, math.nan(f64));
-    try prometheus.sample(w, "fixture_positive_infinity", .{}, math.inf(f64));
-    try prometheus.sample(w, "fixture_negative_infinity", .{}, -math.inf(f64));
-    try prometheus.sample(w, "fixture_small", .{}, 0.0001);
-    try prometheus.sample(w, "fixture_tiny", .{}, 1e-7);
-    try prometheus.sample(w, "fixture_big", .{}, 1e300);
-    try prometheus.sample(w, "fixture_subnormal", .{}, 5e-324);
-    try prometheus.sample(w, "fixture_u64", .{}, math.maxInt(u64));
-    try prometheus.sample(w, "fixture_i64", .{}, -math.maxInt(i64));
-
-    // Families: the header once, HELP escaping, and an empty HELP.
-    const requests = try prometheus.family(w, .{
-        .name = "fixture_family_total",
+    try prometheus.family(w, .{
+        .name = "fixture_requests_total",
         .kind = .counter,
-        .help = "Requests served.\nWith a backslash \\ and a \"quote\".",
+        .help = "Requests served, by method and status.",
+    }, &.{
+        .{ .labels = .{ .method = "GET", .status = "200" }, .value = 1841 },
+        .{ .labels = .{ .method = "POST", .status = "500" }, .value = 3 },
     });
-    try requests.write(.{ .method = "GET", .status = "200" }, 1841);
-    try requests.write(.{ .method = "GET", .status = "500" }, 7);
-    try requests.write(.{}, 3);
 
-    const queue = try prometheus.family(w, .{ .name = "fixture_queue", .kind = .gauge });
-    try queue.write(.{ .state = "ready" }, 12);
+    try prometheus.family(w, .{ .name = "fixture_up", .kind = .gauge }, &.{
+        .{ .labels = .{}, .value = 1 },
+        .{ .labels = .{ .k = "" }, .value = 0 },
+        .{ .labels = .{ .k = "back\\slash\"quote\nnewline" }, .value = 2 },
+        .{ .labels = .{ .k = "tab\ttcr\rc\x00nul" }, .value = 3 },
+        .{ .labels = .{ .k = "é 日本 🦎" }, .value = 4 },
+        .{ .labels = .{ .port = 8080 }, .value = 5 },
+    });
 
-    const scratch = try prometheus.family(w, .{ .name = "fixture_untyped", .kind = .untyped });
-    try scratch.write(.{}, 0);
+    try prometheus.family(w, .{
+        .name = "fixture_escaped_help",
+        .kind = .untyped,
+        .help = "Back\\slash.\nNew line. \"Quote\". Tab\there.",
+    }, &.{.{ .labels = .{}, .value = 0 }});
 
-    // A histogram family: cumulative buckets, the implicit +Inf bucket, sum,
-    // and count, with `le` formatted by the same float writer.
-    const latency = try prometheus.histogramFamily(w, .{
+    try prometheus.family(w, .{ .name = "fixture_bare", .kind = .counter }, &.{
+        .{ .labels = .{}, .value = 0 },
+    });
+
+    try prometheus.family(w, .{ .name = "fixture_values", .kind = .untyped }, &.{
+        .{ .labels = .{ .case = "zero" }, .value = 0 },
+        .{ .labels = .{ .case = "negative_zero" }, .value = -0.0 },
+        .{ .labels = .{ .case = "nan" }, .value = std.math.nan(f64) },
+        .{ .labels = .{ .case = "inf" }, .value = std.math.inf(f64) },
+        .{ .labels = .{ .case = "negative_inf" }, .value = -std.math.inf(f64) },
+        .{ .labels = .{ .case = "small" }, .value = 0.0001 },
+        .{ .labels = .{ .case = "tiny" }, .value = 1e-7 },
+        .{ .labels = .{ .case = "big" }, .value = 1e300 },
+        .{ .labels = .{ .case = "subnormal" }, .value = 5e-324 },
+        .{ .labels = .{ .case = "u64_max" }, .value = std.math.maxInt(u64) },
+    });
+
+    try prometheus.histogramFamily(w, .{
         .name = "fixture_latency_seconds",
         .kind = .histogram,
         .help = "Request latency.",
-    });
-    try latency.write(.{ .method = "GET" }, .{
         .limits = &.{ 0.001, 0.1, 1e6 },
-        .counts = &.{ 1, 3, 4 },
+    }, &.{.{
+        .labels = .{ .method = "GET" },
+        .counts = &[_]u64{ 1, 3, 4 },
         .sum = 1.5,
         .count = 4,
-    });
-    const unbucketed = try prometheus.histogramFamily(w, .{
+    }});
+
+    try prometheus.histogramFamily(w, .{
         .name = "fixture_unbucketed",
         .kind = .histogram,
-    });
-    try unbucketed.write(.{}, .{ .limits = &.{}, .counts = &.{}, .sum = 0, .count = 0 });
+    }, &.{.{
+        .labels = .{},
+        .counts = &[_]u64{},
+        .sum = 0,
+        .count = 0,
+    }});
 }

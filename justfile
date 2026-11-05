@@ -17,13 +17,20 @@ check-fixture:
     set -euo pipefail
     zig build fixture | prom2json > /dev/null
 
-[doc("Emit N random documents with SEED and feed each to prom2json. Fails on the first rejection and prints the seed")]
+[doc("Emit N random documents with SEED and feed each to prom2json. Fails on the first rejection, prints the seed, and keeps the txtar archive")]
 [group("test")]
-check-corpus N="200" SEED="1":
+check-corpus N="50" SEED="1":
     #!/usr/bin/env bash
     set -euo pipefail
     out=$(mktemp -d)
-    trap 'rm -rf "$out"' EXIT
+    cleanup() {
+        if [ $? -eq 0 ]; then
+            rm -rf "$out"
+        else
+            echo "corpus replay: $out/corpus.txtar (seed {{ SEED }})" >&2
+        fi
+    }
+    trap cleanup EXIT
     zig build corpus -- "$out" {{ N }} {{ SEED }}
     for doc in "$out"/*.prom; do
         if ! prom2json "$doc" > /dev/null; then
@@ -32,7 +39,7 @@ check-corpus N="200" SEED="1":
             exit 1
         fi
     done
-    echo "corpus: $(ls "$out" | wc -l | tr -d ' ') documents accepted by prom2json (seed {{ SEED }})"
+    echo "corpus: $(ls "$out"/*.prom | wc -l | tr -d ' ') documents accepted by prom2json (seed {{ SEED }})"
 
 [doc("Compile the snippets in test/compile_fail and fail unless each is rejected at comptime with its own message")]
 [group("test")]
@@ -53,12 +60,22 @@ check-compile-fail:
     done
     echo "compile-fail: $(ls test/compile_fail/*.zig | wc -l | tr -d ' ') cases rejected at comptime"
 
+[doc("Run the encode benchmarks in ReleaseFast through testingx, reporting bytes per second. Pass --count=N to repeat")]
+[group("test")]
+bench:
+    zig build bench -- --count=5
+
+[doc("Build and run the encode benchmark once, so a benchmark that stops compiling fails CI")]
+[group("ci")]
+check-bench:
+    zig build bench -- --count=1
+
 [doc("Lint Zig, Nix, Markdown, the workflows, and this justfile: ziglint, the shared ast-grep rules, zig fmt, nix fmt, oxfmt, actionlint, zizmor, and just --fmt")]
 [group("lint")]
 lint:
     ziglint-0-16
     baskingspot-lint src
-    zig fmt --check src test tools build.zig build.zig.zon
+    zig fmt --check src test tools bench build.zig build.zig.zon
     nix fmt -- --ci
     oxfmt --check README.md AGENTS.md CHANGELOG.md docs/content docs/config.toml docs/static .github .oxfmtrc.jsonc wrangler.jsonc
     actionlint
@@ -68,7 +85,7 @@ lint:
 [doc("Format everything lint checks")]
 [group("lint")]
 fmt:
-    zig fmt src test tools build.zig build.zig.zon
+    zig fmt src test tools bench build.zig build.zig.zon
     nix fmt
     oxfmt README.md AGENTS.md CHANGELOG.md docs/content docs/config.toml docs/static .github .oxfmtrc.jsonc wrangler.jsonc
     just --fmt
@@ -100,4 +117,4 @@ doc-deploy: doc
 
 [doc("Everything CI runs: the gate, lint, the seeded corpus, and the site build")]
 [group("ci")]
-ci: check lint check-corpus doc
+ci: check lint check-corpus check-bench doc

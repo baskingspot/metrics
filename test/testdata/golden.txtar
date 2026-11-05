@@ -1,0 +1,77 @@
+Prometheus golden documents. Each section is the exact bytes one family writes, trailing newline included, and every case runs through the comptime door and the runtime door and must match this file both times.
+
+An input is Zig code, not text, so the sections hold expected output only; the case's inputs are the call in test/golden.zig beside it.
+-- labeled.expected --
+# HELP requests_total Requests served, by method and status.
+# TYPE requests_total counter
+requests_total{method="GET",status="200"} 1841
+requests_total{method="POST",status="500"} 3
+-- unlabeled.expected --
+# HELP up One per scrape.
+# TYPE up gauge
+up 1
+-- integer_label.expected --
+# TYPE listener_port gauge
+listener_port{port="5432"} 1
+-- escape_label.expected --
+# TYPE worker_log counter
+worker_log{message="say \"hi\"\nthen\\leave"} 1
+-- escape_help.expected --
+# HELP escaped a\\b"c\nd
+# TYPE escaped gauge
+escaped 1
+-- empty_help.expected --
+# TYPE bare counter
+bare 0
+-- three_families.expected --
+# HELP first_total First family.
+# TYPE first_total counter
+first_total{k="a"} 1
+first_total{k="b"} 2
+# TYPE second gauge
+second 3
+# TYPE third_bytes untyped
+third_bytes 4
+-- histogram_one_bucket.expected --
+# TYPE latency_seconds histogram
+latency_seconds_bucket{le="10"} 3
+latency_seconds_bucket{le="+Inf"} 3
+latency_seconds_sum 5.5
+latency_seconds_count 3
+-- histogram_inf_only.expected --
+# TYPE latency_seconds histogram
+latency_seconds_bucket{le="+Inf"} 7
+latency_seconds_sum 1.25
+latency_seconds_count 7
+-- histogram_le_format.expected --
+# TYPE latency_seconds histogram
+latency_seconds_bucket{method="GET",le="1e-07"} 0
+latency_seconds_bucket{method="GET",le="0.001"} 1
+latency_seconds_bucket{method="GET",le="1e+06"} 1
+latency_seconds_bucket{method="GET",le="+Inf"} 1
+latency_seconds_sum{method="GET"} 0.001
+latency_seconds_count{method="GET"} 1
+-- values.expected --
+# TYPE values untyped
+values{case="one_tenth"} 0.1
+values{case="ten_thousandth"} 0.0001
+values{case="small"} 1e-07
+values{case="nines"} 999999
+values{case="million"} 1e+06
+values{case="million_and_change"} 1.234567e+06
+values{case="large"} 1e+21
+values{case="huge"} 1e+300
+values{case="three"} 3
+values{case="third"} 0.3333333333333333
+values{case="two_to_53"} 9.007199254740992e+15
+values{case="min_normal"} 2.2250738585072014e-308
+values{case="negative_zero"} -0
+values{case="zero"} 0
+values{case="nan"} NaN
+values{case="inf"} +Inf
+values{case="negative_inf"} -Inf
+values{case="subnormal"} 5e-324
+-- integers.expected --
+# TYPE counters untyped
+counters{case="u64_max"} 18446744073709551615
+counters{case="above_2_53"} 9007199254740993

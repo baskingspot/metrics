@@ -10,9 +10,8 @@ const Io = std.Io;
 
 const compat = @import("compat.zig");
 const escaping = @import("escape.zig");
-const names = @import("name.zig");
 
-pub const Error = error{InvalidUtf8};
+pub const Error = error{InvalidLabelValue};
 
 /// Write `{k="v"}` for a struct with fields, and nothing at all for one
 /// without. A zero-label sample is `name 1`, not `name{} 1`: both parse, and
@@ -32,10 +31,6 @@ pub fn writeFields(w: *Io.Writer, labels: anytype) (Io.Writer.Error || Error)!vo
     if (comptime compat.fieldCount(LabelStruct) == 0) return;
     inline for (0..comptime compat.fieldCount(LabelStruct)) |i| {
         const label_name = comptime compat.fieldName(LabelStruct, i);
-        comptime if (!names.validLabelName(label_name)) {
-            @compileError("prometheus: label name \"" ++ label_name ++
-                "\" is not [a-zA-Z_][a-zA-Z0-9_]*");
-        };
         if (i > 0) try w.writeByte(',');
         try w.writeAll(label_name);
         try w.writeAll("=\"");

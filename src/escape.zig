@@ -7,25 +7,44 @@
 //!
 //! Invalid UTF-8 is the same class of failure: the parser rejects the document,
 //! so one bad label value takes down the whole scrape. The writer refuses to
-//! emit one and returns `error.InvalidUtf8` instead.
+//! emit one and returns `error.InvalidLabelValue` instead.
 
 const std = @import("std");
 const Io = std.Io;
 const findAny = std.mem.findAny;
 const utf8ValidateSlice = std.unicode.utf8ValidateSlice;
-const testing = std.testing;
-const Allocator = std.mem.Allocator;
 
-pub const Error = error{InvalidUtf8};
+pub const Error = error{InvalidLabelValue};
 
 pub fn writeLabelValue(w: *Io.Writer, value: []const u8) (Io.Writer.Error || Error)!void {
     try checkUtf8(value);
-    try writeEscaped(w, value, "\\\"\n");
+    try writeEscaped(w, value, label_specials);
 }
 
 pub fn writeHelpText(w: *Io.Writer, value: []const u8) (Io.Writer.Error || Error)!void {
     try checkUtf8(value);
-    try writeEscaped(w, value, "\\\n");
+    try writeEscaped(w, value, help_specials);
+}
+
+/// The escaped form of HELP text, built at comptime for a comptime family.
+///
+/// The comptime door writes its whole `# HELP`/`# TYPE` block as one literal,
+/// so it needs the escaped bytes as a value rather than as a write.
+pub fn escapeHelp(comptime text: []const u8) []const u8 {
+    comptime {
+        if (!utf8ValidateSlice(text)) {
+            @compileError("prometheus: HELP text is not valid UTF-8");
+        }
+        var out: []const u8 = "";
+        for (text) |c| {
+            out = out ++ switch (c) {
+                '\\' => "\\\\",
+                '\n' => "\\n",
+                else => &[_]u8{c},
+            };
+        }
+        return out;
+    }
 }
 
 /// The bytes that need escaping in a label value, in HELP text, and nothing
@@ -34,10 +53,14 @@ pub const label_specials = "\\\"\n";
 pub const help_specials = "\\\n";
 
 fn checkUtf8(value: []const u8) Error!void {
-    if (!utf8ValidateSlice(value)) return error.InvalidUtf8;
+    if (!utf8ValidateSlice(value)) return error.InvalidLabelValue;
 }
 
-fn writeEscaped(w: *Io.Writer, value: []const u8, comptime specials: []const u8) Io.Writer.Error!void {
+fn writeEscaped(
+    w: *Io.Writer,
+    value: []const u8,
+    comptime specials: []const u8,
+) Io.Writer.Error!void {
     var rest = value;
     while (rest.len > 0) {
         const at = findAny(u8, rest, specials) orelse {
@@ -55,6 +78,9 @@ fn writeEscaped(w: *Io.Writer, value: []const u8, comptime specials: []const u8)
         rest = rest[at + 1 ..];
     }
 }
+
+const testing = std.testing;
+const Allocator = std.mem.Allocator;
 
 fn expectEscaped(expected: []const u8, value: []const u8) !void {
     var buffer: [512]u8 = undefined;
@@ -88,12 +114,9 @@ test "empty HELP writes nothing" {
 test "invalid UTF-8 is refused rather than emitted" {
     var buffer: [64]u8 = undefined;
     var w: Io.Writer = .fixed(&buffer);
-    try testing.expectError(error.InvalidUtf8, writeLabelValue(&w, &.{0xff}));
-    try testing.expectError(error.InvalidUtf8, writeHelpText(&w, &.{0xc3}));
-
-    var help_buffer: [64]u8 = undefined;
-    var hw: Io.Writer = .fixed(&help_buffer);
-    try testing.expectError(error.InvalidUtf8, writeHelpText(&hw, &.{ 0xed, 0xa0, 0x80 }));
+    try testing.expectError(error.InvalidLabelValue, writeLabelValue(&w, &.{0xff}));
+    try testing.expectError(error.InvalidLabelValue, writeHelpText(&w, &.{0xc3}));
+    try testing.expectError(error.InvalidLabelValue, writeHelpText(&w, &.{ 0xed, 0xa0, 0x80 }));
 }
 
 /// Undo the label escaping, so the round trip can be checked without trusting

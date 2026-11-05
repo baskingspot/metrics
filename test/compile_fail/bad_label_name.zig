@@ -9,5 +9,7 @@ const BadLabels = struct { @"not-a-label": u8 };
 test "a label name outside the grammar does not compile" {
     var buffer: [256]u8 = undefined;
     var w: std.Io.Writer = .fixed(&buffer);
-    try prometheus.sample(&w, "x", BadLabels{ .@"not-a-label" = 1 }, 1);
+    try prometheus.family(&w, .{ .name = "ok", .kind = .counter }, &.{
+        .{ .labels = BadLabels{ .@"not-a-label" = 1 }, .value = 1 },
+    });
 }
