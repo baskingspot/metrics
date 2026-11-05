@@ -6,6 +6,8 @@
 //! arrives as a slice and is checked at run time.
 
 const std = @import("std");
+const ascii = std.ascii;
+const testing = std.testing;
 
 pub const Error = error{InvalidName};
 
@@ -41,11 +43,11 @@ pub fn validLabelName(name: []const u8) bool {
 }
 
 fn isLabelStart(c: u8) bool {
-    return std.ascii.isAlphabetic(c) or c == '_';
+    return ascii.isAlphabetic(c) or c == '_';
 }
 
 fn isLabelContinue(c: u8) bool {
-    return isLabelStart(c) or std.ascii.isDigit(c);
+    return isLabelStart(c) or ascii.isDigit(c);
 }
 
 fn isMetricStart(c: u8) bool {
@@ -55,8 +57,6 @@ fn isMetricStart(c: u8) bool {
 fn isMetricContinue(c: u8) bool {
     return isLabelContinue(c) or c == ':';
 }
-
-const testing = std.testing;
 
 test "the metric name grammar" {
     const good = [_][]const u8{ "a", "_", ":a", "a:b", "a_1", "A9", "a_z_Z_0" };

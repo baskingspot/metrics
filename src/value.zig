@@ -12,6 +12,7 @@
 const std = @import("std");
 const Io = std.Io;
 const math = std.math;
+const testing = std.testing;
 
 /// Longest `{e}` output for an f64 is 24 bytes: sign, digit, point, 16 digits,
 /// `e`, sign, three digits.
@@ -98,8 +99,6 @@ fn writePositional(w: *Io.Writer, digits: []const u8, exponent: i32) Io.Writer.E
     try w.writeByte('.');
     try w.writeAll(digits[point_at..]);
 }
-
-const testing = std.testing;
 
 fn expectValue(expected: []const u8, value: f64) !void {
     var buffer: [512]u8 = undefined;

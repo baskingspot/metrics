@@ -1,74 +1,47 @@
 //! Prometheus text exposition format for Zig: write metrics to any writer, no
 //! HTTP.
 //!
-//! One sample line, and later one family at a time. The sink is any
-//! `std.Io.Writer`, so a buffer, a file, and a socket are the caller's problem
-//! and this module never sees a socket.
+//! One sample line, or one family at a time with its header written once. The
+//! sink is any `std.Io.Writer`, so a buffer, a file, and a socket are the
+//! caller's problem and this module never sees a socket.
 
 const std = @import("std");
 const Io = std.Io;
 const testing = std.testing;
 
-const compat = @import("compat.zig");
-const escaping = @import("escape.zig");
+const errors = @import("errors.zig");
+/// What every writer in this module can fail with: the sink's own failure, plus
+/// the two input checks that keep one caller's typo out of a document.
+pub const Error = errors.Error;
+pub const Family = @import("Family.zig");
+const labels = @import("labels.zig");
 const names = @import("name.zig");
 const values = @import("value.zig");
 
-/// What every writer in this module can fail with: the sink's own failure, plus
-/// the two input checks that keep one caller's typo out of a document.
-pub const Error = Io.Writer.Error || error{ InvalidName, InvalidUtf8 };
-
 /// Write one sample line: `name{label="value"} 1` and a newline.
 ///
-/// Labels come from a struct, in field order, so a field name is a label name
-/// and an illegal one does not compile. This writes no header; a document whose
-/// samples need `# HELP` and `# TYPE` uses `family`.
-pub fn sample(w: *Io.Writer, name: []const u8, labels: anytype, value: anytype) Error!void {
+/// This writes no header. A document whose samples need `# HELP` and `# TYPE`
+/// uses `family`.
+pub fn sample(w: *Io.Writer, name: []const u8, labels_: anytype, value: anytype) Error!void {
     try names.checkMetricName(name);
     try w.writeAll(name);
-    if (comptime compat.fieldCount(@TypeOf(labels)) > 0) {
-        try w.writeByte('{');
-        try writeLabels(w, labels);
-        try w.writeByte('}');
-    }
+    try labels.writeGroup(w, labels_);
     try w.writeByte(' ');
     try values.write(w, value);
     try w.writeByte('\n');
 }
 
-fn writeLabels(w: *Io.Writer, labels: anytype) Error!void {
-    const LabelStruct = @TypeOf(labels);
-    inline for (0..comptime compat.fieldCount(LabelStruct)) |i| {
-        const label_name = comptime compat.fieldName(LabelStruct, i);
-        comptime if (!names.validLabelName(label_name)) {
-            @compileError("prometheus: label name \"" ++ label_name ++
-                "\" is not [a-zA-Z_][a-zA-Z0-9_]*");
-        };
-        if (i > 0) try w.writeByte(',');
-        try w.writeAll(label_name);
-        try w.writeAll("=\"");
-        try writeLabelValue(w, @field(labels, label_name));
-        try w.writeByte('"');
-    }
+/// Write the family's header and return the handle its samples are written
+/// through. The name and kind are comptime, so a histogram here or an illegal
+/// metric name does not compile.
+pub fn family(w: *Io.Writer, comptime f: Family) Error!Family.Samples {
+    return f.writeHeader(w);
 }
 
-fn writeLabelValue(w: *Io.Writer, label: anytype) Error!void {
-    return switch (@typeInfo(@TypeOf(label))) {
-        .int, .comptime_int => w.print("{d}", .{label}),
-        // A string literal arrives as `*const [N:0]u8` and a struct field as
-        // `[]const u8`; both coerce to the same slice.
-        .pointer => escaping.writeLabelValue(w, label),
-        else => @compileError(
-            "prometheus: a label value is an integer or a string, not " ++
-                @typeName(@TypeOf(label)),
-        ),
-    };
-}
-
-fn expectRender(expected: []const u8, metric: []const u8, labels: anytype, value: anytype) !void {
+fn expectRender(expected: []const u8, metric: []const u8, labels_: anytype, value: anytype) !void {
     var buffer: [2048]u8 = undefined;
     var w: Io.Writer = .fixed(&buffer);
-    try sample(&w, metric, labels, value);
+    try sample(&w, metric, labels_, value);
     try testing.expectEqualStrings(expected, w.buffered());
 }
 
@@ -133,4 +106,68 @@ test "every sample line ends with a newline" {
     try sample(&w, "a", .{ .k = "v" }, 1.5);
     try sample(&w, "b", .{}, std.math.nan(f64));
     try testing.expectEqual(@as(u8, '\n'), w.buffered()[w.buffered().len - 1]);
+}
+
+test "a document written family by family has contiguous samples" {
+    var buffer: [1024]u8 = undefined;
+    var w: Io.Writer = .fixed(&buffer);
+
+    const first = try family(&w, .{
+        .name = "first_total",
+        .kind = .counter,
+        .help = "First family.",
+    });
+    try first.write(.{ .k = "a" }, 1);
+    try first.write(.{ .k = "b" }, 2);
+
+    const second = try family(&w, .{ .name = "second", .kind = .gauge });
+    try second.write(.{}, 3);
+
+    const third = try family(&w, .{ .name = "third_bytes", .kind = .untyped, .help = "" });
+    try third.write(.{}, 4);
+
+    try testing.expectEqualStrings(
+        \\# HELP first_total First family.
+        \\# TYPE first_total counter
+        \\first_total{k="a"} 1
+        \\first_total{k="b"} 2
+        \\# TYPE second gauge
+        \\second 3
+        \\# TYPE third_bytes untyped
+        \\third_bytes 4
+        \\
+    , w.buffered());
+}
+
+test "HELP escapes a backslash and a newline, not a quote" {
+    var buffer: [512]u8 = undefined;
+    var w: Io.Writer = .fixed(&buffer);
+    const f = try family(&w, .{
+        .name = "escaped",
+        .kind = .gauge,
+        .help = "a\\b\"c\nd",
+    });
+    try f.write(.{}, 1);
+    try testing.expectEqualStrings(
+        "# HELP escaped a\\\\b\"c\\nd\n# TYPE escaped gauge\nescaped 1\n",
+        w.buffered(),
+    );
+}
+
+test "an empty HELP writes no line" {
+    var buffer: [128]u8 = undefined;
+    var w: Io.Writer = .fixed(&buffer);
+    const f = try family(&w, .{ .name = "bare", .kind = .counter, .help = "" });
+    try f.write(.{}, 0);
+    try testing.expectEqualStrings("# TYPE bare counter\nbare 0\n", w.buffered());
+}
+
+test "a family with no samples is its header alone" {
+    var buffer: [128]u8 = undefined;
+    var w: Io.Writer = .fixed(&buffer);
+    _ = try family(&w, .{ .name = "empty_total", .kind = .counter, .help = "Nothing yet." });
+    try testing.expectEqualStrings(
+        "# HELP empty_total Nothing yet.\n# TYPE empty_total counter\n",
+        w.buffered(),
+    );
 }

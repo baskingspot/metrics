@@ -13,6 +13,8 @@ const std = @import("std");
 const Io = std.Io;
 const findAny = std.mem.findAny;
 const utf8ValidateSlice = std.unicode.utf8ValidateSlice;
+const testing = std.testing;
+const Allocator = std.mem.Allocator;
 
 pub const Error = error{InvalidUtf8};
 
@@ -53,9 +55,6 @@ fn writeEscaped(w: *Io.Writer, value: []const u8, comptime specials: []const u8)
         rest = rest[at + 1 ..];
     }
 }
-
-const testing = std.testing;
-const Allocator = std.mem.Allocator;
 
 fn expectEscaped(expected: []const u8, value: []const u8) !void {
     var buffer: [512]u8 = undefined;

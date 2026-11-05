@@ -34,12 +34,31 @@ check-corpus N="200" SEED="1":
     done
     echo "corpus: $(ls "$out" | wc -l | tr -d ' ') documents accepted by prom2json (seed {{ SEED }})"
 
+[doc("Compile the snippets in test/compile_fail and fail unless each is rejected at comptime with its own message")]
+[group("test")]
+check-compile-fail:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for source in test/compile_fail/*.zig; do
+        expected=$(cat "${source%.zig}.expect")
+        if output=$(zig test --dep prometheus -Mroot="$source" -Mprometheus=src/root.zig 2>&1); then
+            echo "compiled, but must not: $source" >&2
+            exit 1
+        fi
+        if ! printf '%s' "$output" | grep -qF "$expected"; then
+            echo "$source failed for the wrong reason; expected: $expected" >&2
+            printf '%s\n' "$output" >&2
+            exit 1
+        fi
+    done
+    echo "compile-fail: $(ls test/compile_fail/*.zig | wc -l | tr -d ' ') cases rejected at comptime"
+
 [doc("Lint Zig, Nix, Markdown, the workflows, and this justfile: ziglint, the shared ast-grep rules, zig fmt, nix fmt, oxfmt, actionlint, zizmor, and just --fmt")]
 [group("lint")]
 lint:
     ziglint-0-16
     baskingspot-lint src
-    zig fmt --check src build.zig build.zig.zon
+    zig fmt --check src test tools build.zig build.zig.zon
     nix fmt -- --ci
     oxfmt --check README.md AGENTS.md CHANGELOG.md .github .oxfmtrc.jsonc
     actionlint
@@ -49,14 +68,14 @@ lint:
 [doc("Format everything lint checks")]
 [group("lint")]
 fmt:
-    zig fmt src build.zig build.zig.zon
+    zig fmt src test tools build.zig build.zig.zon
     nix fmt
     oxfmt README.md AGENTS.md CHANGELOG.md .github .oxfmtrc.jsonc
     just --fmt
 
-[doc("The per-version gate: the module suite and the oracle fixture, on either compiler")]
+[doc("The per-version gate: the module suite, the oracle fixture, and the compile-fail snippets, on either compiler")]
 [group("ci")]
-check: test check-fixture
+check: test check-fixture check-compile-fail
 
 [doc("Everything CI runs: the gate, lint, and the seeded corpus")]
 [group("ci")]
