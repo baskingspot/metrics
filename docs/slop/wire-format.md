@@ -53,7 +53,7 @@ bucket and nothing else.
 ## Value formatting
 
 `prometheus/common`'s `writeFloat`: `NaN`, `+Inf`, `-Inf` bare, zero as `0` or
-`-0`, everything else `strconv.FormatFloat(f, 'g', -1, 64)`. Zig's `{e}` has
+`0` for both zeros, everything else `strconv.FormatFloat(f, 'g', -1, 64)`. Zig's `{e}` has
 the shortest digits, so the formatter parses its mantissa and exponent and
 re-emits them per Go's rule: exponent form below -4 and at 6 and above, with a
 signed, zero-padded exponent. All 14 rows of the reference table agree on both

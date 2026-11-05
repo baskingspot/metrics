@@ -31,7 +31,7 @@
               config.devShells.docs
               config.devShells."zig-0-17"
             ];
-            # The oracle for `just check-fixture` and `just check-corpus`:
+            # The oracle for `just check-golden` and `just check-corpus`:
             # Prometheus 3.15.1's own exposition parser, from the flake so the
             # gates run offline.
             packages = with pkgs; [

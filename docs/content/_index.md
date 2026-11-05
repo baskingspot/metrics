@@ -95,7 +95,9 @@ exponent form when the decimal exponent is below -4 or at least 6. A float
 `1e6` is `1e+06`, a float `1234567.0` is `1.234567e+06`, `0.0001` stays as it
 is, and `1e300` is five bytes instead of 301.
 
-`NaN`, `+Inf`, and `-Inf` are written exactly so, and zero is `0` or `-0`.
+`NaN`, `+Inf`, and `-Inf` are written exactly so, and zero is `0`. Negative
+zero is `0` too: Go's writer tests `f == 0`, which is true for it, and matching
+that is the point.
 
 An integer never goes through `f64`, so it is exact and positional: the integer
 `1234567` stays `1234567`, and a `u64` above 2^53 prints every digit. A Go

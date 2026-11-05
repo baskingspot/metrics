@@ -87,7 +87,7 @@ recipes, and `just ci` runs what CI runs: the unit tests, the guide's examples,
 lint, the `prom2json` gates, one benchmark iteration, and the site build.
 
 Two recipes check the output against Prometheus's own parser:
-`just check-fixture` renders one document covering every construct, and
+`just check-golden` pipes every golden document through it, and
 `just check-corpus N SEED` renders `N` random documents from a seed and fails
 on the first rejection. `just check` is the same gate on the previous Zig.
 

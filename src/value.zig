@@ -36,7 +36,9 @@ pub fn write(w: *Io.Writer, value: anytype) Io.Writer.Error!void {
 pub fn writeFloat(w: *Io.Writer, value: f64) Io.Writer.Error!void {
     if (math.isNan(value)) return w.writeAll("NaN");
     if (math.isInf(value)) return w.writeAll(if (value > 0) "+Inf" else "-Inf");
-    if (value == 0) return w.writeAll(if (math.signbit(value)) "-0" else "0");
+    // `f == 0` is true for negative zero, and Go's writer takes that arm, so
+    // this is the one place a sign is dropped on purpose.
+    if (value == 0) return w.writeAll("0");
 
     // `{e}` is the shortest round-trip digits in scientific form with no sign
     // and no padding on the exponent: `1.5e0`, `1e300`, `3.333333333333333e-1`.
@@ -123,7 +125,7 @@ test "the Go 'g' table" {
     try expectValue("0.3333333333333333", 1.0 / 3.0);
     try expectValue("9.007199254740992e+15", 9007199254740993.0);
     try expectValue("2.2250738585072014e-308", 2.2250738585072014e-308);
-    try expectValue("-0", -0.0);
+    try expectValue("0", -0.0);
     try expectValue("0", 0.0);
     try expectValue("NaN", math.nan(f64));
     try expectValue("+Inf", math.inf(f64));
