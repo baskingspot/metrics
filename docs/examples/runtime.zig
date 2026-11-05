@@ -32,7 +32,7 @@ test "the runtime door reports a bad name instead of writing it" {
     var buffer: [512]u8 = undefined;
     var w: std.Io.Writer = .fixed(&buffer);
 
-    try std.testing.expectError(error.InvalidMetricName, prometheus.runtime.family(
+    try std.testing.expectError(error.InvalidName, prometheus.runtime.family(
         &w,
         .{ .name = "1_requests", .kind = .counter },
         &.{.{ .labels = .{}, .value = 12 }},

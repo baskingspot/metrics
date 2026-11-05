@@ -10,13 +10,6 @@ default:
 test:
     zig build test --summary all
 
-[doc("Pipe the fixture document through prom2json, Prometheus 3.15.1's own parser. It rejects a bad escape, a raw newline, a bad name, or bad UTF-8")]
-[group("test")]
-check-fixture:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    zig build fixture | prom2json > /dev/null
-
 [doc("Emit N random documents with SEED and feed each to prom2json. Fails on the first rejection, prints the seed, and keeps the txtar archive")]
 [group("test")]
 check-corpus N="50" SEED="1":
@@ -92,7 +85,7 @@ fmt:
 
 [doc("The per-version gate: the module suite, the oracle fixture, and the compile-fail snippets, on either compiler")]
 [group("ci")]
-check: test check-fixture check-compile-fail
+check: test check-compile-fail
 
 [doc("Build the site into zig-out/site/prometheus/: the guide (Zola, from docs/) and the API reference (docgen JSON, rendered by the theme's api.html) under api/")]
 [group("docs")]

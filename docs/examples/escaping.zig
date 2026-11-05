@@ -21,7 +21,7 @@ test "invalid UTF-8 is an error, not a document" {
     var w: std.Io.Writer = .fixed(&buffer);
 
     const bad: []const u8 = &.{ 0xff, 0xfe };
-    try std.testing.expectError(error.InvalidLabelValue, prometheus.family(
+    try std.testing.expectError(error.InvalidUtf8, prometheus.family(
         &w,
         .{ .name = "worker_log", .kind = .counter },
         &.{.{ .labels = .{ .message = bad }, .value = 1 }},

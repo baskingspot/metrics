@@ -111,7 +111,7 @@ is written raw, including tab, carriage return, NUL, and any valid UTF-8.
 ```
 
 Invalid UTF-8 is the other failure that costs the whole scrape. The writer
-checks each label value and returns `error.InvalidLabelValue` rather than emit
+checks each label value and returns `error.InvalidUtf8` rather than emit
 a document that is structurally fine and semantically poisoned. The buffer is
 left holding the bytes written before the bad one, so a caller that streams to
 a socket should render into a buffer first.
@@ -156,9 +156,11 @@ the same descriptor as a value and validates it at run time.
 ```
 
 The error set is the same for both doors: the sink's failure, plus
-`InvalidMetricName`, `InvalidLabelName`, `InvalidLabelValue`, `MismatchedKind`,
-`DuplicateLabel`, and `InvalidHistogram`. The comptime door never returns the
-ones its compile-time checks catch.
+`InvalidName`, `InvalidUtf8`, `InvalidBuckets`, and `MismatchedKind`. What
+differs is where a mistake is caught. The metric name, the kind, and the limits
+are values, so the runtime door returns an error and the comptime door does
+not compile. A label name and a duplicated `le` come from a type, so both doors
+reject those at compile time.
 
 ## The same bytes
 
@@ -191,7 +193,7 @@ An empty `limits` slice is legal: the family is one `+Inf` bucket, `_sum`, and
 
 ## What the writer checks
 
-`write` returns `error.InvalidHistogram` when any of these fails, in every
+Each sample's counts are checked at run time, and `error.InvalidBuckets` comes back when any of these fails, in every
 build mode, and the comptime door turns the limit check into a compile error:
 
 - `counts.len` equals `limits.len`.

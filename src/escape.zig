@@ -7,14 +7,14 @@
 //!
 //! Invalid UTF-8 is the same class of failure: the parser rejects the document,
 //! so one bad label value takes down the whole scrape. The writer refuses to
-//! emit one and returns `error.InvalidLabelValue` instead.
+//! emit one and returns `error.InvalidUtf8` instead.
 
 const std = @import("std");
 const Io = std.Io;
 const findAny = std.mem.findAny;
 const utf8ValidateSlice = std.unicode.utf8ValidateSlice;
 
-pub const Error = error{InvalidLabelValue};
+pub const Error = error{InvalidUtf8};
 
 pub fn writeLabelValue(w: *Io.Writer, value: []const u8) (Io.Writer.Error || Error)!void {
     try checkUtf8(value);
@@ -53,7 +53,7 @@ pub const label_specials = "\\\"\n";
 pub const help_specials = "\\\n";
 
 fn checkUtf8(value: []const u8) Error!void {
-    if (!utf8ValidateSlice(value)) return error.InvalidLabelValue;
+    if (!utf8ValidateSlice(value)) return error.InvalidUtf8;
 }
 
 fn writeEscaped(
@@ -114,9 +114,9 @@ test "empty HELP writes nothing" {
 test "invalid UTF-8 is refused rather than emitted" {
     var buffer: [64]u8 = undefined;
     var w: Io.Writer = .fixed(&buffer);
-    try testing.expectError(error.InvalidLabelValue, writeLabelValue(&w, &.{0xff}));
-    try testing.expectError(error.InvalidLabelValue, writeHelpText(&w, &.{0xc3}));
-    try testing.expectError(error.InvalidLabelValue, writeHelpText(&w, &.{ 0xed, 0xa0, 0x80 }));
+    try testing.expectError(error.InvalidUtf8, writeLabelValue(&w, &.{0xff}));
+    try testing.expectError(error.InvalidUtf8, writeHelpText(&w, &.{0xc3}));
+    try testing.expectError(error.InvalidUtf8, writeHelpText(&w, &.{ 0xed, 0xa0, 0x80 }));
 }
 
 /// Undo the label escaping, so the round trip can be checked without trusting

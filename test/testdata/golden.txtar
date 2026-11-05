@@ -20,6 +20,9 @@ worker_log{message="say \"hi\"\nthen\\leave"} 1
 # HELP escaped a\\b"c\nd
 # TYPE escaped gauge
 escaped 1
+-- header_only.expected --
+# HELP empty_total Nothing yet.
+# TYPE empty_total counter
 -- empty_help.expected --
 # TYPE bare counter
 bare 0

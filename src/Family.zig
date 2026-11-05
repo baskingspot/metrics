@@ -34,10 +34,6 @@ limits: []const f64 = &.{},
 
 pub const Kind = enum { counter, gauge, histogram, untyped };
 
-/// Which door the call came through. It decides what a failed check does, and
-/// nothing else: the emitter below is the same for both.
-pub const Door = enum { compile_time, runtime };
-
 /// What the caller is asking to write, so one validator can tell the two
 /// entry points apart.
 const Work = enum { samples, histograms };
@@ -54,7 +50,7 @@ pub fn writeSamples(
 ) errors.Error!void {
     comptime checkComptime(self, .samples);
     try w.writeAll(comptime headerBlock(self));
-    try emitSamples(w, .compile_time, self.name, samples);
+    try emitSamples(w, self.name, samples);
 }
 
 pub fn writeHistograms(
@@ -64,7 +60,7 @@ pub fn writeHistograms(
 ) errors.Error!void {
     comptime checkComptime(self, .histograms);
     try w.writeAll(comptime headerBlock(self));
-    try emitHistograms(w, .compile_time, self.name, self.limits, comptime leTexts(self.limits), histograms);
+    try emitHistograms(w, self.name, self.limits, comptime leTexts(self.limits), histograms);
 }
 
 // -- Runtime door ----------------------------------------------------------
@@ -72,44 +68,30 @@ pub fn writeHistograms(
 pub fn writeSamplesRuntime(self: Family, w: *Io.Writer, samples: anytype) errors.Error!void {
     try checkRuntime(self, .samples);
     try writeHeaderLines(w, self);
-    try emitSamples(w, .runtime, self.name, samples);
+    try emitSamples(w, self.name, samples);
 }
 
 pub fn writeHistogramsRuntime(self: Family, w: *Io.Writer, histograms: anytype) errors.Error!void {
     try checkRuntime(self, .histograms);
     try writeHeaderLines(w, self);
-    try emitHistograms(w, .runtime, self.name, self.limits, null, histograms);
+    try emitHistograms(w, self.name, self.limits, null, histograms);
 }
 
 // -- The emitter, shared by both doors -------------------------------------
 
-fn emitSamples(
-    w: *Io.Writer,
-    comptime door: Door,
-    name: []const u8,
-    samples: anytype,
-) errors.Error!void {
+fn emitSamples(w: *Io.Writer, name: []const u8, samples: anytype) errors.Error!void {
     // A slice, an array, and a tuple are all legal here. A tuple's elements can
     // have different label structs, so it needs an unrolled loop; the element
     // work below is written once either way.
     if (comptime isTuple(@TypeOf(samples))) {
-        inline for (samples) |sample| try emitSample(w, door, name, sample);
+        inline for (samples) |sample| try emitSample(w, name, sample);
     } else {
-        for (samples) |sample| try emitSample(w, door, name, sample);
+        for (samples) |sample| try emitSample(w, name, sample);
     }
 }
 
-fn emitSample(
-    w: *Io.Writer,
-    comptime door: Door,
-    name: []const u8,
-    sample: anytype,
-) errors.Error!void {
-    if (comptime door == .compile_time) {
-        comptime checkLabelNamesComptime(@TypeOf(sample.labels));
-    } else {
-        try checkLabelNamesRuntime(@TypeOf(sample.labels));
-    }
+fn emitSample(w: *Io.Writer, name: []const u8, sample: anytype) errors.Error!void {
+    comptime checkLabelNames(@TypeOf(sample.labels));
     try writeSampleLine(w, name, sample.labels, sample.value);
 }
 
@@ -128,7 +110,6 @@ fn writeSampleLine(
 
 fn emitHistograms(
     w: *Io.Writer,
-    comptime door: Door,
     name: []const u8,
     limits: []const f64,
     comptime le_table: anytype,
@@ -136,26 +117,21 @@ fn emitHistograms(
 ) errors.Error!void {
     if (comptime isTuple(@TypeOf(histograms))) {
         inline for (histograms) |histogram| {
-            try emitHistogram(w, door, name, limits, le_table, histogram);
+            try emitHistogram(w, name, limits, le_table, histogram);
         }
     } else {
-        for (histograms) |histogram| try emitHistogram(w, door, name, limits, le_table, histogram);
+        for (histograms) |histogram| try emitHistogram(w, name, limits, le_table, histogram);
     }
 }
 
 fn emitHistogram(
     w: *Io.Writer,
-    comptime door: Door,
     name: []const u8,
     limits: []const f64,
     comptime le_table: anytype,
     histogram: anytype,
 ) errors.Error!void {
-    if (comptime door == .compile_time) {
-        comptime checkNoLeComptime(@TypeOf(histogram.labels));
-    } else {
-        try checkNoLeRuntime(@TypeOf(histogram.labels));
-    }
+    comptime checkNoLe(@TypeOf(histogram.labels));
     const counts = histogram.counts;
     try checkCounts(limits, counts, histogram.count);
 
@@ -313,8 +289,8 @@ fn checkComptime(comptime f: Family, comptime work: Work) void {
 }
 
 fn checkRuntime(f: Family, work: Work) errors.Error!void {
-    if (!names.isValidMetricName(f.name)) return error.InvalidMetricName;
-    if (!std.unicode.utf8ValidateSlice(f.help)) return error.InvalidLabelValue;
+    if (!names.isValidMetricName(f.name)) return error.InvalidName;
+    if (!std.unicode.utf8ValidateSlice(f.help)) return error.InvalidUtf8;
     switch (work) {
         .samples => if (f.kind == .histogram) return error.MismatchedKind,
         .histograms => if (f.kind != .histogram) return error.MismatchedKind,
@@ -322,7 +298,7 @@ fn checkRuntime(f: Family, work: Work) errors.Error!void {
     if (work == .histograms) try checkLimits(f.limits);
 }
 
-fn checkLabelNamesComptime(comptime LabelStruct: type) void {
+fn checkLabelNames(comptime LabelStruct: type) void {
     inline for (0..comptime compat.fieldCount(LabelStruct)) |i| {
         const label_name = comptime compat.fieldName(LabelStruct, i);
         comptime if (!names.isValidLabelName(label_name)) {
@@ -332,29 +308,18 @@ fn checkLabelNamesComptime(comptime LabelStruct: type) void {
     }
 }
 
-fn checkLabelNamesRuntime(comptime LabelStruct: type) errors.Error!void {
-    inline for (0..comptime compat.fieldCount(LabelStruct)) |i| {
-        const label_name = comptime compat.fieldName(LabelStruct, i);
-        if (comptime !names.isValidLabelName(label_name)) return error.InvalidLabelName;
-    }
-}
-
-fn checkNoLeComptime(comptime LabelStruct: type) void {
+fn checkNoLe(comptime LabelStruct: type) void {
     comptime if (@hasField(LabelStruct, "le")) {
         @compileError("prometheus: a histogram label set cannot contain \"le\", which this writes");
     };
 }
 
-fn checkNoLeRuntime(comptime LabelStruct: type) errors.Error!void {
-    if (comptime @hasField(LabelStruct, "le")) return error.DuplicateLabel;
-}
-
 /// Strictly ascending and finite, so no `NaN`, no repeat, and no `+Inf`, which
 /// the implicit bucket already owns.
-fn checkLimits(limits: []const f64) error{InvalidHistogram}!void {
+fn checkLimits(limits: []const f64) error{InvalidBuckets}!void {
     var previous: f64 = -std.math.inf(f64);
     for (limits) |limit| {
-        if (!std.math.isFinite(limit) or !(limit > previous)) return error.InvalidHistogram;
+        if (!std.math.isFinite(limit) or !(limit > previous)) return error.InvalidBuckets;
         previous = limit;
     }
 }
@@ -365,18 +330,18 @@ fn checkCounts(
     limits: []const f64,
     counts: anytype,
     total: u64,
-) error{InvalidHistogram}!void {
-    if (counts.len != limits.len) return error.InvalidHistogram;
+) error{InvalidBuckets}!void {
+    if (counts.len != limits.len) return error.InvalidBuckets;
     var previous: u64 = 0;
     if (comptime isTuple(@TypeOf(counts))) {
         inline for (counts, 0..) |count, i| try checkCount(&previous, count, i);
     } else {
         for (counts, 0..) |count, i| try checkCount(&previous, count, i);
     }
-    if (counts.len > 0 and counts[counts.len - 1] != total) return error.InvalidHistogram;
+    if (counts.len > 0 and counts[counts.len - 1] != total) return error.InvalidBuckets;
 }
 
-fn checkCount(previous: *u64, count: u64, index: usize) error{InvalidHistogram}!void {
-    if (index > 0 and count < previous.*) return error.InvalidHistogram;
+fn checkCount(previous: *u64, count: u64, index: usize) error{InvalidBuckets}!void {
+    if (index > 0 and count < previous.*) return error.InvalidBuckets;
     previous.* = count;
 }

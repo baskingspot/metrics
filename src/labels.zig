@@ -11,7 +11,7 @@ const Io = std.Io;
 const compat = @import("compat.zig");
 const escaping = @import("escape.zig");
 
-pub const Error = error{InvalidLabelValue};
+pub const Error = error{InvalidUtf8};
 
 /// Write `{k="v"}` for a struct with fields, and nothing at all for one
 /// without. A zero-label sample is `name 1`, not `name{} 1`: both parse, and

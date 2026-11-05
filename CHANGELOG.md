@@ -11,5 +11,5 @@ All notable changes to prometheus are recorded here. The format follows
 - `prometheus.runtime` writes the same families from a descriptor built at run time, for a composed name or an embedder's prefix.
 - `Family.limits` carries the histogram bucket bounds, and an empty slice is one `+Inf` bucket.
 - Values are written the way `prometheus/common` writes them, so a `u64` above 2^53 keeps every digit and `1e300` takes five bytes instead of 301.
-- Label values and help text are escaped, and invalid UTF-8 returns `error.InvalidLabelValue`. A bad name is a compile error at the comptime door and `error.InvalidMetricName` at the runtime one.
+- Label values and help text are escaped, and invalid UTF-8 returns `error.InvalidUtf8`. A bad metric name is a compile error at the comptime door and `error.InvalidName` at the runtime one; a bad label name and a `le` collision never compile, whichever door is used.
 - `just bench` reports encode throughput for four cases, and `just check-corpus N SEED` gates a seeded corpus through Prometheus's own parser.

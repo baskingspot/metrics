@@ -6,9 +6,10 @@
 //! the caller passed.
 //!
 //! The predicates return bool on purpose. The comptime door turns `false` into
-//! `@compileError` with the offending name in the message; the runtime door
-//! turns it into `error.InvalidMetricName` or `error.InvalidLabelName`. Both
-//! read the same rule.
+//! `@compileError` with the offending name in the message, and the runtime door
+//! turns a bad metric name into `error.InvalidName`. A label name is comptime
+//! in both doors, so it is always a compile error. Every caller reads the same
+//! rule.
 
 const std = @import("std");
 

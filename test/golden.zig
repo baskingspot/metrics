@@ -87,6 +87,14 @@ test "HELP escapes a backslash and a newline, not a quote" {
     }, &.{.{ .labels = .{}, .value = 1 }});
 }
 
+test "a family with no samples is its header alone" {
+    try expectSamples("header_only.expected", .{
+        .name = "empty_total",
+        .kind = .counter,
+        .help = "Nothing yet.",
+    }, .{});
+}
+
 test "an empty HELP writes no line" {
     try expectSamples("empty_help.expected", .{
         .name = "bare",
@@ -213,30 +221,22 @@ test "the runtime door reports what the comptime door refuses to compile" {
     const no_samples = &[_]CounterSample{};
 
     var w1: Io.Writer = .fixed(&buffer);
-    try testing.expectError(error.InvalidMetricName, prometheus.runtime.family(
+    try testing.expectError(error.InvalidName, prometheus.runtime.family(
         &w1,
         .{ .name = "1_requests", .kind = .counter },
         no_samples,
     ));
 
-    const BadLabels = struct { @"not-a-label": u8 };
-    var w2: Io.Writer = .fixed(&buffer);
-    try testing.expectError(error.InvalidLabelName, prometheus.runtime.family(
-        &w2,
-        .{ .name = "ok", .kind = .counter },
-        &.{.{ .labels = BadLabels{ .@"not-a-label" = 1 }, .value = 1 }},
-    ));
-
     const bad_utf8: []const u8 = &.{0xff};
     var w3: Io.Writer = .fixed(&buffer);
-    try testing.expectError(error.InvalidLabelValue, prometheus.runtime.family(
+    try testing.expectError(error.InvalidUtf8, prometheus.runtime.family(
         &w3,
         .{ .name = "ok", .kind = .counter },
         &.{.{ .labels = .{ .k = bad_utf8 }, .value = 1 }},
     ));
 
     var w4: Io.Writer = .fixed(&buffer);
-    try testing.expectError(error.InvalidLabelValue, prometheus.runtime.family(
+    try testing.expectError(error.InvalidUtf8, prometheus.runtime.family(
         &w4,
         .{ .name = "ok", .kind = .counter, .help = bad_utf8 },
         no_samples,
@@ -256,24 +256,16 @@ test "the runtime door reports what the comptime door refuses to compile" {
         &[_]HistogramSample{},
     ));
 
-    const LeLabels = struct { le: u8 };
-    var w7: Io.Writer = .fixed(&buffer);
-    try testing.expectError(error.DuplicateLabel, prometheus.runtime.histogramFamily(
-        &w7,
-        .{ .name = "ok", .kind = .histogram },
-        &.{.{ .labels = LeLabels{ .le = 1 }, .counts = &[_]u64{}, .sum = 0, .count = 0 }},
-    ));
-
     const countOne = &[_]u64{1};
     var w8: Io.Writer = .fixed(&buffer);
-    try testing.expectError(error.InvalidHistogram, prometheus.runtime.histogramFamily(
+    try testing.expectError(error.InvalidBuckets, prometheus.runtime.histogramFamily(
         &w8,
         .{ .name = "ok", .kind = .histogram, .limits = &.{ 2, 1 } },
         &.{.{ .labels = .{}, .counts = countOne, .sum = 0, .count = 1 }},
     ));
 
     var w9: Io.Writer = .fixed(&buffer);
-    try testing.expectError(error.InvalidHistogram, prometheus.runtime.histogramFamily(
+    try testing.expectError(error.InvalidBuckets, prometheus.runtime.histogramFamily(
         &w9,
         .{ .name = "ok", .kind = .histogram, .limits = &.{1} },
         &.{.{ .labels = .{}, .counts = &[_]u64{}, .sum = 0, .count = 0 }},
@@ -281,7 +273,7 @@ test "the runtime door reports what the comptime door refuses to compile" {
 
     const notCumulative = &[_]u64{ 2, 1 };
     var w10: Io.Writer = .fixed(&buffer);
-    try testing.expectError(error.InvalidHistogram, prometheus.runtime.histogramFamily(
+    try testing.expectError(error.InvalidBuckets, prometheus.runtime.histogramFamily(
         &w10,
         .{ .name = "ok", .kind = .histogram, .limits = &.{ 1, 2 } },
         &.{.{ .labels = .{}, .counts = notCumulative, .sum = 0, .count = 1 }},
@@ -289,7 +281,7 @@ test "the runtime door reports what the comptime door refuses to compile" {
 
     const twoBuckets = &[_]u64{ 1, 2 };
     var w11: Io.Writer = .fixed(&buffer);
-    try testing.expectError(error.InvalidHistogram, prometheus.runtime.histogramFamily(
+    try testing.expectError(error.InvalidBuckets, prometheus.runtime.histogramFamily(
         &w11,
         .{ .name = "ok", .kind = .histogram, .limits = &.{ 1, 2 } },
         &.{.{ .labels = .{}, .counts = twoBuckets, .sum = 0, .count = 3 }},
@@ -297,7 +289,7 @@ test "the runtime door reports what the comptime door refuses to compile" {
 
     const nanLimit = &[_]f64{std.math.nan(f64)};
     var w12: Io.Writer = .fixed(&buffer);
-    try testing.expectError(error.InvalidHistogram, prometheus.runtime.histogramFamily(
+    try testing.expectError(error.InvalidBuckets, prometheus.runtime.histogramFamily(
         &w12,
         .{ .name = "ok", .kind = .histogram, .limits = nanLimit },
         &.{.{ .labels = .{}, .counts = countOne, .sum = 0, .count = 1 }},

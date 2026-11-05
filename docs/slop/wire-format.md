@@ -66,7 +66,7 @@ Integers take a separate path and never go through `f64`.
 
 Three bytes are escaped in a label value and two in HELP. Tab, carriage
 return, NUL, and any valid UTF-8 stay raw. Invalid UTF-8 returns
-`error.InvalidLabelValue` instead of producing a document the parser rejects.
+`error.InvalidUtf8` instead of producing a document the parser rejects.
 
 ## Tests
 

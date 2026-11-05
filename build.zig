@@ -63,9 +63,8 @@ pub fn build(b: *std.Build) void {
     const run_example_tests = b.addRunArtifact(example_tests);
     test_step.dependOn(&run_example_tests.step);
 
-    // The two oracle gates drive real programs against the public module: one
-    // fixed document, and the seeded corpus. Neither is installed.
-    addTool(b, mod, target, optimize, "fixture", "tools/fixture.zig");
+    // The oracle gate: a seeded corpus of documents, one file each and the set
+    // as one txtar. It is a development program, not an installed one.
     addTool(b, mod, target, optimize, "corpus", "tools/corpus.zig");
 
     // testingx's addBench builds the suite as a ReleaseFast executable. While
