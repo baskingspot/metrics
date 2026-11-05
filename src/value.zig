@@ -12,6 +12,7 @@
 const std = @import("std");
 const Io = std.Io;
 const math = std.math;
+const mem = std.mem;
 const testing = std.testing;
 
 /// Longest `{e}` output for an f64 is 24 bytes: sign, digit, point, 16 digits,
@@ -47,7 +48,7 @@ pub fn writeFloat(w: *Io.Writer, value: f64) Io.Writer.Error!void {
 
     const negative = text[0] == '-';
     const body = if (negative) text[1..] else text;
-    const exp_at = std.mem.findScalar(u8, body, 'e').?;
+    const exp_at = mem.findScalar(u8, body, 'e').?;
     const exponent = std.fmt.parseInt(i32, body[exp_at + 1 ..], 10) catch unreachable;
 
     var digits_buffer: [digits_size]u8 = undefined;

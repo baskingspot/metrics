@@ -1,0 +1,1 @@
+prometheus: a histogram label set cannot contain `le`

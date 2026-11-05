@@ -53,4 +53,23 @@ fn document(w: *Io.Writer) !void {
 
     const scratch = try prometheus.family(w, .{ .name = "fixture_untyped", .kind = .untyped });
     try scratch.write(.{}, 0);
+
+    // A histogram family: cumulative buckets, the implicit +Inf bucket, sum,
+    // and count, with `le` formatted by the same float writer.
+    const latency = try prometheus.histogramFamily(w, .{
+        .name = "fixture_latency_seconds",
+        .kind = .histogram,
+        .help = "Request latency.",
+    });
+    try latency.write(.{ .method = "GET" }, .{
+        .limits = &.{ 0.001, 0.1, 1e6 },
+        .counts = &.{ 1, 3, 4 },
+        .sum = 1.5,
+        .count = 4,
+    });
+    const unbucketed = try prometheus.histogramFamily(w, .{
+        .name = "fixture_unbucketed",
+        .kind = .histogram,
+    });
+    try unbucketed.write(.{}, .{ .limits = &.{}, .counts = &.{}, .sum = 0, .count = 0 });
 }

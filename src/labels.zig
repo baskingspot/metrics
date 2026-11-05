@@ -20,8 +20,16 @@ pub const Error = error{InvalidUtf8};
 pub fn writeGroup(w: *Io.Writer, labels: anytype) (Io.Writer.Error || Error)!void {
     const LabelStruct = @TypeOf(labels);
     if (comptime compat.fieldCount(LabelStruct) == 0) return;
-
     try w.writeByte('{');
+    try writeFields(w, labels);
+    try w.writeByte('}');
+}
+
+/// Write `k="v",k="v"` with no braces and no trailing comma, for a caller that
+/// adds a label of its own. A histogram's `le` is the reason.
+pub fn writeFields(w: *Io.Writer, labels: anytype) (Io.Writer.Error || Error)!void {
+    const LabelStruct = @TypeOf(labels);
+    if (comptime compat.fieldCount(LabelStruct) == 0) return;
     inline for (0..comptime compat.fieldCount(LabelStruct)) |i| {
         const label_name = comptime compat.fieldName(LabelStruct, i);
         comptime if (!names.validLabelName(label_name)) {
@@ -34,7 +42,6 @@ pub fn writeGroup(w: *Io.Writer, labels: anytype) (Io.Writer.Error || Error)!voi
         try writeLabelValue(w, @field(labels, label_name));
         try w.writeByte('"');
     }
-    try w.writeByte('}');
 }
 
 fn writeLabelValue(w: *Io.Writer, label: anytype) (Io.Writer.Error || Error)!void {

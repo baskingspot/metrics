@@ -46,6 +46,8 @@ const family_descriptors = [_]prometheus.Family{
     .{ .name = "fixture_f", .kind = .gauge, .help = "é 日本 🦎" },
     .{ .name = "fixture_g", .kind = .untyped, .help = "ends with a backslash \\" },
     .{ .name = "fixture_h", .kind = .gauge, .help = "\n" },
+    .{ .name = "fixture_latency_seconds", .kind = .histogram, .help = "Latency." },
+    .{ .name = "fixture_payload_bytes", .kind = .histogram, .help = "" },
 };
 
 const edge_values = [_]f64{
@@ -101,9 +103,16 @@ fn document(arena: Allocator, random: std.Random) ![]const u8 {
         inline for (family_descriptors) |descriptor| {
             if (emitted < 4 and random.boolean()) {
                 emitted += 1;
-                const handle = try prometheus.family(&w, descriptor);
-                for (0..random.intRangeAtMost(usize, 0, 5)) |_| {
-                    try emit_family_sample(&handle, arena, random);
+                if (comptime descriptor.kind == .histogram) {
+                    const handle = try prometheus.histogramFamily(&w, descriptor);
+                    for (0..random.intRangeAtMost(usize, 0, 3)) |_| {
+                        try emit_histogram_sample(&handle, arena, random);
+                    }
+                } else {
+                    const handle = try prometheus.family(&w, descriptor);
+                    for (0..random.intRangeAtMost(usize, 0, 5)) |_| {
+                        try emit_family_sample(&handle, arena, random);
+                    }
                 }
             }
         }
@@ -124,6 +133,36 @@ fn emit_family_sample(handle: anytype, arena: Allocator, random: std.Random) !vo
             .code = random.int(u16),
             .host = try label_text(arena, random),
         }, random),
+    }
+}
+
+fn emit_histogram_sample(handle: anytype, arena: Allocator, random: std.Random) !void {
+    var limits: [8]f64 = undefined;
+    var counts: [8]u64 = undefined;
+    const bucket_count = random.intRangeAtMost(usize, 0, limits.len);
+    var previous: f64 = 0;
+    var cumulative: u64 = 0;
+    for (0..bucket_count) |i| {
+        // Strictly ascending: every step is at least 1.
+        previous += random.float(f64) * 1000 + 1;
+        cumulative += random.intRangeAtMost(u64, 0, 100);
+        limits[i] = previous;
+        counts[i] = cumulative;
+    }
+    const buckets: prometheus.Family.Buckets = .{
+        .limits = limits[0..bucket_count],
+        .counts = counts[0..bucket_count],
+        .sum = random.float(f64) * 1000,
+        .count = cumulative,
+    };
+    switch (random.uintLessThan(u8, 3)) {
+        0 => try handle.write(.{}, buckets),
+        1 => try handle.write(.{ .k = try label_text(arena, random) }, buckets),
+        else => try handle.write(.{
+            .method = try label_text(arena, random),
+            .code = random.int(u16),
+            .host = try label_text(arena, random),
+        }, buckets),
     }
 }
 

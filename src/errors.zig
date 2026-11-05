@@ -8,4 +8,4 @@
 const std = @import("std");
 const Io = std.Io;
 
-pub const Error = Io.Writer.Error || error{ InvalidName, InvalidUtf8 };
+pub const Error = Io.Writer.Error || error{ InvalidName, InvalidUtf8, InvalidBuckets };
