@@ -91,14 +91,17 @@ the compiler enforces it: a field written as `@"not-a-label"` does not compile.
 
 A float is written the way `prometheus/common` writes it, which is
 `strconv.FormatFloat(f, 'g', -1, 64)`: the shortest digits that round-trip, in
-exponent form when the decimal exponent is below -4 or at least 6. So `1e6` is
-`1e+06`, `1234567` is `1.234567e+06`, `0.0001` stays as it is, and `1e300` is
-five bytes instead of 301.
+exponent form when the decimal exponent is below -4 or at least 6. A float
+`1e6` is `1e+06`, a float `1234567.0` is `1.234567e+06`, `0.0001` stays as it
+is, and `1e300` is five bytes instead of 301.
 
 `NaN`, `+Inf`, and `-Inf` are written exactly so, and zero is `0` or `-0`.
 
-An integer never goes through `f64`. A `u64` counter above 2^53 prints every
-digit.
+An integer never goes through `f64`, so it is exact and positional: the integer
+`1234567` stays `1234567`, and a `u64` above 2^53 prints every digit. A Go
+client passing that count as a float writes `1.234567e+06`, because it has no
+integer path. Floats are the bytes that match Go; a count here is exact by
+design.
 
 ## Escaping and UTF-8
 
@@ -156,8 +159,9 @@ the same descriptor as a value and validates it at run time.
 ```
 
 The error set is the same for both doors: the sink's failure, plus
-`InvalidName`, `InvalidUtf8`, `InvalidBuckets`, and `MismatchedKind`. What
-differs is where a mistake is caught. The metric name, the kind, and the limits
+`InvalidName`, `InvalidUtf8`, `InvalidBuckets`, and `MismatchedKind`, and every
+one of them has a path that returns it. What differs is where a mistake is
+caught. The metric name, the kind, and the limits
 are values, so the runtime door returns an error and the comptime door does
 not compile. A label name and a duplicated `le` come from a type, so both doors
 reject those at compile time.

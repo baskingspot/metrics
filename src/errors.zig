@@ -6,9 +6,8 @@
 //!
 //! The comptime door turns `InvalidName` and `MismatchedKind` into compile
 //! errors, and so does the runtime door for a label name or a duplicated `le`,
-//! because both come from a comptime type. One set for both doors means a
-//! caller writes one `catch`; `DuplicateLabel` is the one name a caller cannot
-//! reach, kept because the format has a rule for it.
+//! because both come from a comptime type. Every error here has a path that
+//! reaches it, so a caller's `catch` arms are all real.
 
 const std = @import("std");
 const Io = std.Io;
@@ -23,7 +22,4 @@ pub const Error = Io.Writer.Error || error{
     InvalidBuckets,
     /// A histogram descriptor through `family`, or the reverse.
     MismatchedKind,
-    /// A labels struct that carries `le` on a histogram family. Both doors
-    /// reject it at compile time.
-    DuplicateLabel,
 };

@@ -1,6 +1,6 @@
 //! Must not compile: the `le` collision comes from a comptime type, so the
-//! runtime door rejects it at compile time too. There is no runtime
-//! `DuplicateLabel` a caller can hit.
+//! runtime door rejects it at compile time too. No error value is returned,
+//! which is why the error set has no `DuplicateLabel`.
 
 const std = @import("std");
 const prometheus = @import("prometheus");
