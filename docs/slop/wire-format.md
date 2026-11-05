@@ -34,18 +34,38 @@ enumeration.
 
 ## Decisions
 
-Value formatting: `+Inf`, `-Inf`, `NaN` are written as themselves. Every other
-float is formatted both positionally and scientifically, and the scientific
-form is used only when it is strictly shorter. That gives `1841`, `1.5`,
-`1e6`, `1e-3`, and `1e300`. Go's `%g` chooses `1e+06` and `0.001`; ours is
-shorter and legal, and a golden test pins it. Integers never go through `f64`.
+Value formatting: a float is written the way `prometheus/common` writes it,
+`strconv.FormatFloat(f, 'g', -1, 64)`, because that is what every Go client
+emits. `NaN`, `+Inf`, and `-Inf` are written as themselves; zero is `0` or
+`-0`; everything else is the shortest round-trip digits, positional when the
+decimal exponent is in -4 to 5, and exponent form otherwise with a signed,
+two-digit-padded exponent. So `1e6` is `1e+06`, `1234567` is
+`1.234567e+06`, `0.0001` stays positional, and `1e300` is 5 bytes rather
+than 301. Zig's `{e}` already has the shortest digits, so the formatter parses
+its mantissa and exponent and re-emits them; both compilers agree byte for
+byte on the whole table. Integers never go through `f64`.
 
-The buffer for the two candidates is 512 bytes on the stack, which covers the
-326-byte worst case with room to spare.
+Escaping and UTF-8: three bytes are escaped in a label value (`\`, `"`,
+newline) and two in HELP (`\`, newline). Tab, carriage return, NUL, and any
+valid UTF-8 stay raw. Invalid UTF-8 returns `error.InvalidUtf8` instead of
+producing a document the parser rejects, because one bad label value costs
+every series in the scrape.
 
 Interleaving: `family` writes the header and returns a handle that owns the
 write. There is no way to hold two handles over one writer, so a family's
 samples are contiguous by construction.
+
+## The oracle
+
+`prom2json` is in the devshell, from the flake, so both gates run offline.
+`just check-fixture` pipes one document; `just check-corpus N SEED` emits N
+random documents and fails on the first rejection with the seed printed. 300
+documents at seed 11 pass.
+
+Corpus coverage is bounded by the API: a label name is a comptime struct
+field, so label *shapes* are fixed and only values, escapes, counts, and
+numbers vary. Metric names come from a fixed pool. A random name is a unit
+test on the grammar, not a corpus entry.
 
 ## Still open
 

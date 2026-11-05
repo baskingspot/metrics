@@ -29,7 +29,13 @@
               config.devShells.base
               config.devShells."zig-0-17"
             ];
-            packages = [ config.packages."ziglint-0-16" ];
+            # The oracle for `just check-fixture` and `just check-corpus`:
+            # Prometheus 3.15.1's own exposition parser, from the flake so the
+            # gates run offline.
+            packages = with pkgs; [
+              config.packages."ziglint-0-16"
+              prom2json
+            ];
           };
 
           devShells.zig-old = pkgs.mkShell {
@@ -37,7 +43,10 @@
               config.devShells.base
               config.devShells."zig-0-16"
             ];
-            packages = [ config.packages."ziglint-0-16" ];
+            packages = with pkgs; [
+              config.packages."ziglint-0-16"
+              prom2json
+            ];
           };
         };
     };

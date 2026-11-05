@@ -20,6 +20,33 @@ pub fn build(b: *std.Build) void {
     const run_mod_tests = b.addRunArtifact(mod_tests);
     passthruArgs(b, run_mod_tests);
     test_step.dependOn(&run_mod_tests.step);
+
+    // The two oracle gates drive real programs against the public module: one
+    // fixed document, and the seeded corpus. Neither is installed.
+    addTool(b, mod, target, optimize, "fixture", "tools/fixture.zig");
+    addTool(b, mod, target, optimize, "corpus", "tools/corpus.zig");
+}
+
+fn addTool(
+    b: *std.Build,
+    mod: *std.Build.Module,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    name: []const u8,
+    source: []const u8,
+) void {
+    const tool = b.addExecutable(.{
+        .name = name,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(source),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "prometheus", .module = mod }},
+        }),
+    });
+    const run = b.addRunArtifact(tool);
+    passthruArgs(b, run);
+    b.step(name, b.fmt("Run tools/{s}.zig", .{name})).dependOn(&run.step);
 }
 
 /// `b.args` (removed in Zig 0.17) and `Run.addPassthruArgs` are the same
