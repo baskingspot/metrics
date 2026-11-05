@@ -33,19 +33,23 @@ pub fn build(b: *std.Build) void {
 
     // The golden documents and the runtime door's error paths. The archive is
     // embedded at compile time, so the case data is a file a person can read
-    // and a diff shows bytes.
-    const golden_mod = b.createModule(.{
-        .root_source_file = b.path("test/golden.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "prometheus", .module = mod },
-            .{ .name = "testingx", .module = testingx_dep.?.module("testingx") },
-        },
-    });
-    const golden_tests = b.addTest(.{ .root_module = golden_mod, .test_runner = test_runner });
-    const run_golden_tests = b.addRunArtifact(golden_tests);
-    test_step.dependOn(&run_golden_tests.step);
+    // and a diff shows bytes. It needs testingx for the fixture reader, so it
+    // waits for the fetch like the runner does: on the first configure pass the
+    // dependency is null, the runner fetches it, and this script runs again.
+    if (testingx_dep) |dep| {
+        const golden_mod = b.createModule(.{
+            .root_source_file = b.path("test/golden.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "prometheus", .module = mod },
+                .{ .name = "testingx", .module = dep.module("testingx") },
+            },
+        });
+        const golden_tests = b.addTest(.{ .root_module = golden_mod, .test_runner = test_runner });
+        const run_golden_tests = b.addRunArtifact(golden_tests);
+        test_step.dependOn(&run_golden_tests.step);
+    }
 
     // The guide's examples are real programs against the public module, tested
     // with everything else so a guide page cannot show code that does not build.
