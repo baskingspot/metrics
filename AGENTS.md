@@ -21,6 +21,8 @@ The justfile is the command interface: `just test`, `just lint`, `just ci`. Run 
 - Format with `zig fmt` and lint with `ziglint`. `just fmt` and `just lint` run both.
 - `build.zig.zon` has no dependencies. The writer's only sink is `*std.Io.Writer`; there is no HTTP, allocator, clock, thread, or `var` in the library.
 - The test fixtures are synthetic. Do not paste metric names, help text, or label sets from a production service.
+- The oracle is `prom2json`, from the flake. `just check-fixture` pipes one document through it and `just check-corpus N SEED` renders N seeded random documents and fails on the first rejection with the seed printed. It checks syntax, escaping, names, UTF-8, and the trailing newline; it does not check series identity, family ordering, or any histogram invariant, so the unit tests carry those.
+- A compile-fail case is a file in `test/compile_fail/` plus an `.expect` holding the message it must fail with. `just check-compile-fail` runs them and fails if one compiles or fails for the wrong reason.
 - This repo's GitHub settings come from `baskingspot/.github`, with `just settings`. Do not change them by hand.
 - To graduate the project, follow the `baskingspot-new-repo` skill: logos, a real README, and the audit passing.
 

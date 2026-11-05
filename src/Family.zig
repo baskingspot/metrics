@@ -11,6 +11,7 @@
 //! counters; this file decides the bytes.
 
 const std = @import("std");
+const math = std.math;
 const Io = std.Io;
 
 const compat = @import("compat.zig");
@@ -35,7 +36,7 @@ pub const Samples = struct {
     writer: *Io.Writer,
     name: []const u8,
 
-    pub fn write(self: Samples, label_values: anytype, value: anytype) errors.Error!void {
+    pub fn write(self: *const Samples, label_values: anytype, value: anytype) errors.Error!void {
         try self.writer.writeAll(self.name);
         try labels.writeGroup(self.writer, label_values);
         try self.writer.writeByte(' ');
@@ -52,7 +53,7 @@ pub const Histograms = struct {
 
     /// Write one line per limit, the implicit `+Inf` bucket, then `_sum` and
     /// `_count`. The counts are cumulative, as the format requires.
-    pub fn write(self: Histograms, label_values: anytype, buckets: Buckets) errors.Error!void {
+    pub fn write(self: *const Histograms, label_values: anytype, buckets: Buckets) errors.Error!void {
         comptime if (@hasField(@TypeOf(label_values), "le")) {
             @compileError("prometheus: a histogram label set cannot contain `le`, which this writes");
         };
@@ -72,7 +73,7 @@ pub const Histograms = struct {
     }
 
     fn writeBucket(
-        self: Histograms,
+        self: *const Histograms,
         label_values: anytype,
         le: []const u8,
         count: u64,
@@ -90,7 +91,7 @@ pub const Histograms = struct {
     }
 
     fn writeSuffixed(
-        self: Histograms,
+        self: *const Histograms,
         label_values: anytype,
         comptime suffix: []const u8,
         value: anytype,
@@ -119,16 +120,16 @@ pub const Buckets = struct {
     /// Every invariant the format needs, checked in every build mode. A
     /// histogram that emits wrong bytes is the failure this library exists to
     /// prevent, so a bad slice is an error rather than a vanishing assert.
-    pub fn validate(self: Buckets) Error!void {
+    pub fn validate(self: *const Buckets) Error!void {
         if (self.counts.len != self.limits.len) return error.InvalidBuckets;
         if (self.counts.len == 0) return;
 
-        var previous_limit: f64 = -std.math.inf(f64);
+        var previous_limit: f64 = -math.inf(f64);
         var previous_count: u64 = 0;
         for (self.limits, self.counts) |limit, count| {
             // Written so a NaN limit fails, and a repeated limit fails, and a
             // limit of +Inf fails: the implicit bucket already owns that label.
-            if (!std.math.isFinite(limit) or !(limit > previous_limit)) return error.InvalidBuckets;
+            if (!math.isFinite(limit) or !(limit > previous_limit)) return error.InvalidBuckets;
             if (count < previous_count) return error.InvalidBuckets;
             previous_limit = limit;
             previous_count = count;
@@ -141,7 +142,7 @@ pub const Buckets = struct {
 /// handle its samples use. Both the kind and the name are checked at comptime:
 /// a histogram needs `histogramFamily`, which writes bucket lines this handle
 /// cannot.
-pub fn writeHeader(comptime self: Family, w: *Io.Writer) errors.Error!Samples {
+pub fn writeHeader(comptime self: *const Family, w: *Io.Writer) errors.Error!Samples {
     comptime if (self.kind == .histogram) {
         @compileError("prometheus: a histogram family is written by histogramFamily");
     };
@@ -150,7 +151,7 @@ pub fn writeHeader(comptime self: Family, w: *Io.Writer) errors.Error!Samples {
 }
 
 /// The same header for a histogram family, whose samples are bucket lines.
-pub fn writeHistogramHeader(comptime self: Family, w: *Io.Writer) errors.Error!Histograms {
+pub fn writeHistogramHeader(comptime self: *const Family, w: *Io.Writer) errors.Error!Histograms {
     comptime if (self.kind != .histogram) {
         @compileError("prometheus: histogramFamily needs a family whose kind is .histogram");
     };
@@ -158,7 +159,7 @@ pub fn writeHistogramHeader(comptime self: Family, w: *Io.Writer) errors.Error!H
     return .{ .writer = w, .name = self.name };
 }
 
-fn writeLines(comptime self: Family, w: *Io.Writer) errors.Error!void {
+fn writeLines(comptime self: *const Family, w: *Io.Writer) errors.Error!void {
     comptime if (!names.validMetricName(self.name)) {
         @compileError("prometheus: metric name \"" ++ self.name ++
             "\" is not [a-zA-Z_:][a-zA-Z0-9_:]*");
