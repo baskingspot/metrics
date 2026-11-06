@@ -30,6 +30,51 @@ pub fn FamilyWriter(comptime m: Metric) type {
         pub fn write(self: Self, label_values: anytype, value: anytype) Io.Writer.Error!void {
             return writeMetric(self.writer, m.name, label_values, value);
         }
+
+        /// One histogram series: the bucket lines, `_sum`, and `_count`, with no
+        /// header. A family with more than one series writes `help` and `kind`
+        /// once through `writeFamily` and then calls this per series; calling
+        /// `writeHistogram` twice would write the header twice.
+        ///
+        /// `sum` is `anytype` so a caller whose sum is a `u64` keeps every
+        /// digit; a `f64` cannot hold one above 2^53.
+        pub fn writeHistogramSeries(
+            self: Self,
+            label_values: anytype,
+            limits: []const f64,
+            counts: []const u64,
+            sum: anytype,
+            count: u64,
+        ) Io.Writer.Error!void {
+            comptime if (m.kind != .histogram) {
+                @compileError("prometheus: writeHistogramSeries needs a Metric whose kind is .histogram");
+            };
+            comptime if (@hasField(@TypeOf(label_values), "le")) {
+                @compileError("prometheus: a histogram label set cannot contain \"le\", which this writes");
+            };
+            assert(counts.len == limits.len);
+
+            var le_buffer: [values.buffer_size]u8 = undefined;
+            for (limits, counts) |limit, bucket| {
+                try self.writer.name(m.name ++ "_bucket", .{
+                    label_values,
+                    Le{ .le = values.format(&le_buffer, limit) },
+                });
+                try self.writer.value(bucket);
+            }
+            // The implicit bucket, from the total.
+            var inf_buffer: [values.buffer_size]u8 = undefined;
+            try self.writer.name(m.name ++ "_bucket", .{
+                label_values,
+                Le{ .le = values.format(&inf_buffer, std.math.inf(f64)) },
+            });
+            try self.writer.value(count);
+
+            try self.writer.name(m.name ++ "_sum", label_values);
+            try self.writer.value(sum);
+            try self.writer.name(m.name ++ "_count", label_values);
+            try self.writer.value(count);
+        }
     };
 }
 
@@ -51,50 +96,22 @@ pub fn writeFamily(w: *ComposeWriter, comptime m: Metric) Io.Writer.Error!Family
     return .{ .writer = w };
 }
 
-/// A whole classic histogram: the header, one `_bucket` line per limit, the
-/// implicit `+Inf` bucket from the total, `_sum`, and `_count`.
+/// A whole classic histogram for one label set: the header and one series.
 ///
-/// The counts are cumulative and one per limit. The last finite count is at
-/// most the total: an observation above the top limit belongs only to `+Inf`.
-/// Nothing here checks monotonicity or the tail, and a length mismatch is a
-/// debug assertion.
+/// A family with more than one series cannot use this twice, because each call
+/// writes `# HELP` and `# TYPE` again and the parser rejects the second. Write
+/// `writeFamily` once and loop `FamilyWriter.writeHistogramSeries` instead.
 pub fn writeHistogram(
     w: *ComposeWriter,
     comptime m: Metric,
     label_values: anytype,
     limits: []const f64,
     counts: []const u64,
-    sum: f64,
+    sum: anytype,
     count: u64,
 ) Io.Writer.Error!void {
-    comptime if (m.kind != .histogram) {
-        @compileError("prometheus: writeHistogram needs a Metric whose kind is .histogram");
-    };
-    comptime if (@hasField(@TypeOf(label_values), "le")) {
-        @compileError("prometheus: a histogram label set cannot contain \"le\", which this writes");
-    };
-    assert(counts.len == limits.len);
-
-    try w.help(m.name, m.help);
-    try w.kind(m.name, m.kind);
-
-    var le_buffer: [values.buffer_size]u8 = undefined;
-    for (limits, counts) |limit, bucket| {
-        try w.name(m.name ++ "_bucket", .{ label_values, Le{ .le = values.format(&le_buffer, limit) } });
-        try w.value(bucket);
-    }
-    // The implicit bucket, from the total.
-    var inf_buffer: [values.buffer_size]u8 = undefined;
-    try w.name(m.name ++ "_bucket", .{
-        label_values,
-        Le{ .le = values.format(&inf_buffer, std.math.inf(f64)) },
-    });
-    try w.value(count);
-
-    try w.name(m.name ++ "_sum", label_values);
-    try w.value(sum);
-    try w.name(m.name ++ "_count", label_values);
-    try w.value(count);
+    const family = try writeFamily(w, m);
+    return family.writeHistogramSeries(label_values, limits, counts, sum, count);
 }
 
 const ComposeWriter = Writer;

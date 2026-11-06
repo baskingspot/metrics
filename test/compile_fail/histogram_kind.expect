@@ -1,1 +1,1 @@
-prometheus: writeHistogram needs a Metric whose kind is .histogram
+prometheus: writeHistogramSeries needs a Metric whose kind is .histogram

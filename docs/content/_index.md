@@ -144,6 +144,23 @@ belongs only to the `+Inf` bucket, which is written from `count`.
 
 An empty `limits` slice writes one `+Inf` bucket, `_sum`, and `_count`.
 
+## More than one series
+
+`writeHistogram` writes the header and one series, so a family with two label
+sets cannot call it twice: the second call writes `# HELP` and `# TYPE` again
+and the parser rejects the document. Write the header once with `writeFamily`
+and loop the series form.
+
+```zig
+const family = try prometheus.writeFamily(&w, .{ .name = "message_size", .kind = .histogram });
+try family.writeHistogramSeries(.{ .direction = "inbound" }, &.{1024}, &[_]u64{1}, 1024, 1);
+try family.writeHistogramSeries(.{ .direction = "outbound" }, &.{1024}, &[_]u64{0}, 3072, 2);
+```
+
+`sum` is `anytype`: pass a `u64` and every digit is written, because a `f64`
+loses everything above 2^53. A float is formatted the way `writeMetric`
+formats one.
+
 ## What is checked, and what is not
 
 A length mismatch between `limits` and `counts` is a caller bug caught by a
@@ -181,10 +198,11 @@ written raw, including tab, carriage return, NUL, and any valid UTF-8.
 {{ load_data(path = "examples/escaping.zig", format = "plain") | trim_end }}
 ```
 
-Invalid UTF-8 is not an error here. It is `std.debug.assert` in the writer,
-because a label value that comes from outside the program is a bug to catch in
-development, not a condition to thread through every call site in a release
-build. A caller that takes user input checks it before it gets here.
+A label value must be valid UTF-8. The writer does not check it: a check inside
+the writer would turn one crafted value into a debug abort, which is worse than
+the poisoned document it replaces because it is not survivable, and a rule about
+a caller's data does not belong there. Validate where the data arrives, and
+answer with whatever your boundary answers for a bad request.
 
 # The primitives
 

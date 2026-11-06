@@ -215,6 +215,39 @@ test "a histogram with thirty limits" {
     try expect("histogram_thirty.expected", out.buffered());
 }
 
+test "a histogram family with two series writes one header" {
+    var buffer: [document_size]u8 = undefined;
+    var out: Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
+
+    const family = try prometheus.writeFamily(&w, .{
+        .name = "message_size",
+        .kind = .histogram,
+    });
+    try family.writeHistogramSeries(.{ .direction = "inbound" }, &.{1024}, &[_]u64{1}, 1024, 1);
+    try family.writeHistogramSeries(.{ .direction = "outbound" }, &.{1024}, &[_]u64{0}, 3072, 2);
+
+    try expect("histogram_two_series.expected", out.buffered());
+}
+
+// A `u64` sum above 2^53 keeps every digit because the parameter is `anytype`
+// and an integer value takes the integer path.
+test "a histogram sum wider than f64" {
+    var buffer: [document_size]u8 = undefined;
+    var out: Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
+    try prometheus.writeHistogram(
+        &w,
+        .{ .name = "message_size", .kind = .histogram },
+        .{},
+        &.{1024},
+        &[_]u64{3},
+        9007199254740993,
+        3,
+    );
+    try expect("histogram_integer_sum.expected", out.buffered());
+}
+
 test "the value table" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
