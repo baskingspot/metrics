@@ -50,6 +50,23 @@ Neither is a correctness requirement. The sample loop is shared, so if the
 comptime machinery ever fights a compiler, dropping it costs one format per
 bucket and nothing else.
 
+## Why there is no `scratch`
+
+A helper that reinterpreted caller-owned `[]u64` as a typed slice was written
+and removed. `[]u64` was the right word type: alignment 8 is a property of the
+slice, so the cast needs no `@alignCast` on a buffer the caller may have sized
+wrong. `std.mem.bytesAsSlice` was still the wrong primitive underneath, because
+it does `@divExact(bytes.len, @sizeOf(T))` over the whole buffer: a scratch
+holding one spare word past a whole number of samples panics there rather than
+being ignored.
+
+It went because the bookkeeping was the objection, not the cast: storage type,
+alignment, and sizing arithmetic in every caller. An iterator on `family` and
+`histogramFamily` removes the need to materialize at all. What it does not give
+back is the pre-write validation: a materialized sequence is checked before the
+header, an iterator as it goes, so an `InvalidBuckets` from a histogram iterator
+can leave bytes behind.
+
 ## Value formatting
 
 `prometheus/common`'s `writeFloat`: `NaN`, `+Inf`, `-Inf` bare, zero as `0` or

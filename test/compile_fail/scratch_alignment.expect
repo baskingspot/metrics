@@ -1,1 +1,0 @@
-prometheus: scratch() hands back 8-byte alignment, and scratch_alignment.Wide needs more; use a wider word type

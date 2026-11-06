@@ -438,3 +438,116 @@ test "property: a histogram document keeps every bucket invariant" {
         );
     }
 }
+
+// -- Iterators -------------------------------------------------------------
+
+const KV = struct { labels: struct { k: []const u8 }, value: u64 };
+
+const kv_list = [_]KV{
+    .{ .labels = .{ .k = "a" }, .value = 1 },
+    .{ .labels = .{ .k = "b" }, .value = 2 },
+};
+
+const KVIter = struct {
+    items: []const KV,
+    index: usize = 0,
+
+    pub fn next(self: *KVIter) ?KV {
+        if (self.index >= self.items.len) return null;
+        defer self.index += 1;
+        return self.items[self.index];
+    }
+};
+
+test "an iterator and a slice render the same bytes through both doors" {
+    const f = Family{ .name = "iter_total", .kind = .counter };
+
+    var slice_buffer: [document_size]u8 = undefined;
+    var slice_writer: Io.Writer = .fixed(&slice_buffer);
+    try prometheus.family(&slice_writer, f, &kv_list);
+    try testing.expectEqualStrings(
+        \\# TYPE iter_total counter
+        \\iter_total{k="a"} 1
+        \\iter_total{k="b"} 2
+        \\
+    , slice_writer.buffered());
+
+    var by_pointer = KVIter{ .items = &kv_list };
+    var iter_buffer: [document_size]u8 = undefined;
+    var iter_writer: Io.Writer = .fixed(&iter_buffer);
+    try prometheus.family(&iter_writer, f, &by_pointer);
+    try testing.expectEqualStrings(slice_writer.buffered(), iter_writer.buffered());
+
+    var runtime_iter = KVIter{ .items = &kv_list };
+    var runtime_buffer: [document_size]u8 = undefined;
+    var runtime_writer: Io.Writer = .fixed(&runtime_buffer);
+    try prometheus.runtime.family(&runtime_writer, f, &runtime_iter);
+    try testing.expectEqualStrings(slice_writer.buffered(), runtime_writer.buffered());
+
+    // By value: the call takes a copy and advances that.
+    var value_buffer: [document_size]u8 = undefined;
+    var value_writer: Io.Writer = .fixed(&value_buffer);
+    try prometheus.family(&value_writer, f, KVIter{ .items = &kv_list });
+    try testing.expectEqualStrings(slice_writer.buffered(), value_writer.buffered());
+}
+
+test "an empty iterator writes the header alone" {
+    var empty = KVIter{ .items = &[_]KV{} };
+    var buffer: [document_size]u8 = undefined;
+    var w: Io.Writer = .fixed(&buffer);
+    try prometheus.family(&w, .{ .name = "iter_total", .kind = .counter }, &empty);
+    try testing.expectEqualStrings("# TYPE iter_total counter\n", w.buffered());
+}
+
+test "a one-element tuple still works" {
+    const one = .{KV{ .labels = .{ .k = "a" }, .value = 1 }};
+    var buffer: [document_size]u8 = undefined;
+    var w: Io.Writer = .fixed(&buffer);
+    try prometheus.family(&w, .{ .name = "iter_total", .kind = .counter }, &one);
+    try testing.expectEqualStrings(
+        \\# TYPE iter_total counter
+        \\iter_total{k="a"} 1
+        \\
+    , w.buffered());
+}
+
+const HistogramIter = struct {
+    items: []const HistogramSample,
+    index: usize = 0,
+
+    pub fn next(self: *HistogramIter) ?HistogramSample {
+        if (self.index >= self.items.len) return null;
+        defer self.index += 1;
+        return self.items[self.index];
+    }
+};
+
+test "a histogram iterator renders the same bytes as a slice" {
+    const f = Family{
+        .name = "latency_seconds",
+        .kind = .histogram,
+        .limits = &.{ 10, 20 },
+    };
+    const samples = [_]HistogramSample{.{
+        .labels = .{ .k = "v" },
+        .counts = &[_]u64{ 1, 2 },
+        .sum = 45,
+        .count = 3,
+    }};
+
+    var slice_buffer: [document_size]u8 = undefined;
+    var slice_writer: Io.Writer = .fixed(&slice_buffer);
+    try prometheus.histogramFamily(&slice_writer, f, &samples);
+
+    var by_pointer = HistogramIter{ .items = &samples };
+    var iter_buffer: [document_size]u8 = undefined;
+    var iter_writer: Io.Writer = .fixed(&iter_buffer);
+    try prometheus.histogramFamily(&iter_writer, f, &by_pointer);
+    try testing.expectEqualStrings(slice_writer.buffered(), iter_writer.buffered());
+
+    var runtime_iter = HistogramIter{ .items = &samples };
+    var runtime_buffer: [document_size]u8 = undefined;
+    var runtime_writer: Io.Writer = .fixed(&runtime_buffer);
+    try prometheus.runtime.histogramFamily(&runtime_writer, f, &runtime_iter);
+    try testing.expectEqualStrings(slice_writer.buffered(), runtime_writer.buffered());
+}

@@ -26,3 +26,22 @@ pub fn fieldName(comptime T: type, comptime index: usize) []const u8 {
     }
     return @typeInfo(T).@"struct".fields[index].name;
 }
+
+/// True when `T` is a sample iterator: a struct, or a pointer to one, that
+/// declares `next`. `std.meta.hasMethod` is not on both compilers, so the probe
+/// lives here beside the field one.
+///
+/// A struct with a *field* named `next` is not an iterator: `@hasDecl` is false
+/// for it, and the declared thing has to be a function either way.
+pub fn isIterator(comptime T: type) bool {
+    const Child = switch (@typeInfo(T)) {
+        .pointer => |pointer| pointer.child,
+        else => T,
+    };
+    switch (@typeInfo(Child)) {
+        .@"struct", .@"union", .@"enum", .@"opaque" => {},
+        else => return false,
+    }
+    if (!@hasDecl(Child, "next")) return false;
+    return std.meta.activeTag(@typeInfo(@TypeOf(Child.next))) == .@"fn";
+}

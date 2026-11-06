@@ -76,9 +76,16 @@ pub fn writeHistograms(
     histograms: anytype,
 ) errors.HistogramError!void {
     comptime checkComptime(self, .histograms);
-    try checkHistograms(self.limits, histograms);
-    try w.writeAll(comptime headerBlock(self));
-    try emitHistograms(w, self.name, self.limits, comptime leTexts(self.limits), histograms);
+    if (comptime compat.isIterator(@TypeOf(histograms))) {
+        // An iterator cannot be walked twice, so there is no pre-pass; each
+        // sample is checked as it is written.
+        try w.writeAll(comptime headerBlock(self));
+        try emitHistograms(w, self.name, self.limits, comptime leTexts(self.limits), histograms, false);
+    } else {
+        try checkHistograms(self.limits, histograms);
+        try w.writeAll(comptime headerBlock(self));
+        try emitHistograms(w, self.name, self.limits, comptime leTexts(self.limits), histograms, true);
+    }
 }
 
 // -- Runtime door ----------------------------------------------------------
@@ -91,9 +98,14 @@ pub fn writeSamplesRuntime(self: Family, w: *Io.Writer, samples: anytype) errors
 
 pub fn writeHistogramsRuntime(self: Family, w: *Io.Writer, histograms: anytype) errors.Error!void {
     try checkRuntime(self, .histograms);
-    try checkHistograms(self.limits, histograms);
-    try writeHeaderLines(w, self);
-    try emitHistograms(w, self.name, self.limits, null, histograms);
+    if (comptime compat.isIterator(@TypeOf(histograms))) {
+        try writeHeaderLines(w, self);
+        try emitHistograms(w, self.name, self.limits, null, histograms, false);
+    } else {
+        try checkHistograms(self.limits, histograms);
+        try writeHeaderLines(w, self);
+        try emitHistograms(w, self.name, self.limits, null, histograms, true);
+    }
 }
 
 // -- The emitter, shared by both doors -------------------------------------
@@ -102,7 +114,10 @@ fn emitSamples(w: *Io.Writer, name: []const u8, samples: anytype) !void {
     // A slice, an array, and a tuple are all legal here. A tuple's elements can
     // have different label structs, so it needs an unrolled loop; the element
     // work below is written once either way.
-    if (comptime isTuple(@TypeOf(samples))) {
+    if (comptime compat.isIterator(@TypeOf(samples))) {
+        var iterator = samples;
+        while (iterator.next()) |sample| try emitSample(w, name, sample);
+    } else if (comptime isTuple(@TypeOf(samples))) {
         inline for (samples) |sample| try emitSample(w, name, sample);
     } else {
         for (samples) |sample| try emitSample(w, name, sample);
@@ -133,13 +148,23 @@ fn emitHistograms(
     limits: []const f64,
     comptime le_table: anytype,
     histograms: anytype,
+    /// True when `checkHistograms` already ran over a materialized sequence; an
+    /// iterator has no second pass, so it validates each sample as it goes.
+    comptime validated: bool,
 ) !void {
-    if (comptime isTuple(@TypeOf(histograms))) {
+    if (comptime compat.isIterator(@TypeOf(histograms))) {
+        var iterator = histograms;
+        while (iterator.next()) |histogram| {
+            try emitHistogram(w, name, limits, le_table, histogram, false);
+        }
+    } else if (comptime isTuple(@TypeOf(histograms))) {
         inline for (histograms) |histogram| {
-            try emitHistogram(w, name, limits, le_table, histogram);
+            try emitHistogram(w, name, limits, le_table, histogram, validated);
         }
     } else {
-        for (histograms) |histogram| try emitHistogram(w, name, limits, le_table, histogram);
+        for (histograms) |histogram| {
+            try emitHistogram(w, name, limits, le_table, histogram, validated);
+        }
     }
 }
 
@@ -149,8 +174,12 @@ fn emitHistogram(
     limits: []const f64,
     comptime le_table: anytype,
     histogram: anytype,
+    comptime validated: bool,
 ) !void {
+    comptime checkLabelNames(@TypeOf(histogram.labels));
+    comptime checkNoLe(@TypeOf(histogram.labels));
     const counts = histogram.counts;
+    if (!validated) try checkCounts(limits, counts, histogram.count);
 
     var le_buffer: [le_size]u8 = undefined;
     if (comptime isTuple(@TypeOf(counts))) {

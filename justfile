@@ -81,28 +81,6 @@ check-golden:
     done
     echo "golden: $(ls "$out" | wc -l | tr -d ' ') documents accepted by prom2json"
 
-[doc("Run test/panic, which must die on an assertion. A panic handler is process-wide, so this is a program and not a test")]
-[group("test")]
-check-panic:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    for source in test/panic/*.zig; do
-        status=0
-        # The inner `sh` prints the shell's "Aborted" line into the capture, so
-        # a deliberate crash does not read like a broken recipe.
-        output=$(sh -c "ulimit -c 0; exec zig run --dep prometheus -Mroot='$source' -Mprometheus=src/root.zig" 2>&1) || status=$?
-        if [ "$status" -eq 0 ]; then
-            echo "$source ran to completion; it must panic" >&2
-            exit 1
-        fi
-        if ! printf '%s' "$output" | grep -q "assertion failure"; then
-            echo "$source died without an assertion:" >&2
-            printf '%s\n' "$output" >&2
-            exit 1
-        fi
-    done
-    echo "panic: $(ls test/panic/*.zig | wc -l | tr -d ' ') case killed by its assertion"
-
 [doc("Compile the snippets in test/compile_fail and fail unless each is rejected at comptime with its own message")]
 [group("test")]
 check-compile-fail:
@@ -154,7 +132,7 @@ fmt:
 
 [doc("The per-version gate: the module suite, the oracle fixture, and the compile-fail snippets, on either compiler")]
 [group("ci")]
-check: test check-compile-fail check-panic check-golden
+check: test check-compile-fail check-golden
 
 [doc("Build the site into zig-out/site/prometheus/: the guide (Zola, from docs/) and the API reference (docgen JSON, rendered by the theme's api.html) under api/")]
 [group("docs")]
