@@ -14,11 +14,11 @@
 //! definition.
 
 const std = @import("std");
-const prometheus = @import("prometheus");
 const Io = std.Io;
 const Allocator = std.mem.Allocator;
 const math = std.math;
 
+const prometheus = @import("prometheus");
 const Metric = prometheus.Metric;
 
 const fragments = [_][]const u8{
@@ -102,7 +102,7 @@ pub fn main(init: std.process.Init) !void {
 
 fn document(arena: Allocator, random: std.Random) ![]const u8 {
     var out: Io.Writer = .fixed(try arena.alloc(u8, document_capacity));
-    var w = prometheus.Writer.init(&out);
+    var w: prometheus.Writer = .init(&out);
     if (random.boolean()) {
         // Each catalog entry goes out at most once per document, so no name
         // repeats and no second HELP line appears.

@@ -16,7 +16,7 @@ escaping around them, to any `std.Io.Writer`.
 ```zig
 var buffer: [4096]u8 = undefined;
 var out: std.Io.Writer = .fixed(&buffer);
-var w = prometheus.Writer.init(&out);
+var w: prometheus.Writer = .init(&out);
 
 const requests = try w.writeFamily(.{
     .name = "http_requests_total",

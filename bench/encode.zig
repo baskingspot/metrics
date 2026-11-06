@@ -10,9 +10,10 @@
 //! a metrics path: how much exposition one core can push.
 
 const std = @import("std");
+const Io = std.Io;
+
 const prometheus = @import("prometheus");
 const testingx = @import("testingx");
-const Io = std.Io;
 
 const TwoLabels = struct { method: []const u8, status: []const u8 };
 const EightLabels = struct {
@@ -75,7 +76,7 @@ fn benchmarkEscape(b: *testingx.B) !void {
 fn run(b: *testingx.B, labels: anytype) !void {
     var buffer: [64 * 1024]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
-    var w = prometheus.Writer.init(&out);
+    var w: prometheus.Writer = .init(&out);
 
     while (try b.loop()) {
         out.end = 0;
@@ -93,7 +94,7 @@ fn run(b: *testingx.B, labels: anytype) !void {
 fn benchmarkHistogram(b: *testingx.B) !void {
     var buffer: [64 * 1024]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
-    var w = prometheus.Writer.init(&out);
+    var w: prometheus.Writer = .init(&out);
 
     while (try b.loop()) {
         out.end = 0;

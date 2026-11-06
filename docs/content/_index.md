@@ -60,7 +60,7 @@ buffer holds the document with no allocation:
 ```zig
 var buffer: [4096]u8 = undefined;
 var out: std.Io.Writer = .fixed(&buffer);
-var w = prometheus.Writer.init(&out);
+var w: prometheus.Writer = .init(&out);
 ```
 
 `Writer` is the whole interface above the sink: it holds the `*std.Io.Writer`
@@ -226,7 +226,7 @@ primitives and gets the same values and escaping.
 
 ```zig
 var out: std.Io.Writer = .fixed(&buffer);
-var w = prometheus.Writer.init(&out);
+var w: prometheus.Writer = .init(&out);
 try w.name("custom_total", .{ .kind = "custom" });
 try w.value(@as(u64, 7));
 ```
