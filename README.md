@@ -37,7 +37,7 @@ The API is pre-1.0: pin the commit, and expect it to move.
 
 - [Samples](https://baskingspot.dev/prometheus/#samples): labels come from a struct's field names, floats use the same `strconv` format a Go client uses, integers print every digit instead of going through `f64`, and an illegal name does not compile.
 - [Families](https://baskingspot.dev/prometheus/#families): `family` writes `# HELP`, `# TYPE`, and every sample in one call, so there is no handle to leak and no second way to emit a sample.
-- [The runtime door](https://baskingspot.dev/prometheus/#the-runtime-door): `prometheus.runtime` takes the same descriptor as a value, for a name composed at runtime or an embedder's prefix, and validates it the same way.
+- [The runtime door](https://baskingspot.dev/prometheus/#the-runtime-door): `prometheus.runtime` takes the same descriptor as a value, for a name composed at runtime or an embedder's prefix. It returns `prometheus.Error`; the comptime door's sets are narrower and exact.
 - [Histograms](https://baskingspot.dev/prometheus/#histograms): `histogramFamily` takes the caller's limits and cumulative counts and writes `_bucket`, `_sum`, and `_count`, with `le` formatted by the same float writer as a value.
 - [Collecting from several threads](https://baskingspot.dev/prometheus/#collecting-from-several-threads): per-thread counters, a snapshot, and one render, because no library can pick your locking model.
 

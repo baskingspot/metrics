@@ -47,7 +47,7 @@ pub fn writeSamples(
     comptime self: Family,
     w: *Io.Writer,
     samples: anytype,
-) errors.Error!void {
+) errors.FamilyError!void {
     comptime checkComptime(self, .samples);
     try w.writeAll(comptime headerBlock(self));
     try emitSamples(w, self.name, samples);
@@ -56,7 +56,7 @@ pub fn writeSamples(
 /// Every check that can reject the family, before a byte is written, so a
 /// failure leaves the writer as it found it. The label-name and `le` checks are
 /// comptime and run once per label type; the counts are values.
-fn checkHistograms(limits: []const f64, histograms: anytype) errors.Error!void {
+fn checkHistograms(limits: []const f64, histograms: anytype) !void {
     if (comptime isTuple(@TypeOf(histograms))) {
         inline for (histograms) |histogram| try checkOneHistogram(limits, histogram);
     } else {
@@ -64,7 +64,7 @@ fn checkHistograms(limits: []const f64, histograms: anytype) errors.Error!void {
     }
 }
 
-fn checkOneHistogram(limits: []const f64, histogram: anytype) errors.Error!void {
+fn checkOneHistogram(limits: []const f64, histogram: anytype) !void {
     comptime checkLabelNames(@TypeOf(histogram.labels));
     comptime checkNoLe(@TypeOf(histogram.labels));
     try checkCounts(limits, histogram.counts, histogram.count);
@@ -74,7 +74,7 @@ pub fn writeHistograms(
     comptime self: Family,
     w: *Io.Writer,
     histograms: anytype,
-) errors.Error!void {
+) errors.HistogramError!void {
     comptime checkComptime(self, .histograms);
     try checkHistograms(self.limits, histograms);
     try w.writeAll(comptime headerBlock(self));
@@ -98,7 +98,7 @@ pub fn writeHistogramsRuntime(self: Family, w: *Io.Writer, histograms: anytype) 
 
 // -- The emitter, shared by both doors -------------------------------------
 
-fn emitSamples(w: *Io.Writer, name: []const u8, samples: anytype) errors.Error!void {
+fn emitSamples(w: *Io.Writer, name: []const u8, samples: anytype) !void {
     // A slice, an array, and a tuple are all legal here. A tuple's elements can
     // have different label structs, so it needs an unrolled loop; the element
     // work below is written once either way.
@@ -109,7 +109,7 @@ fn emitSamples(w: *Io.Writer, name: []const u8, samples: anytype) errors.Error!v
     }
 }
 
-fn emitSample(w: *Io.Writer, name: []const u8, sample: anytype) errors.Error!void {
+fn emitSample(w: *Io.Writer, name: []const u8, sample: anytype) !void {
     comptime checkLabelNames(@TypeOf(sample.labels));
     try writeSampleLine(w, name, sample.labels, sample.value);
 }
@@ -119,7 +119,7 @@ fn writeSampleLine(
     name: []const u8,
     label_values: anytype,
     value: anytype,
-) errors.Error!void {
+) !void {
     try w.writeAll(name);
     try labels.writeGroup(w, label_values);
     try w.writeByte(' ');
@@ -133,7 +133,7 @@ fn emitHistograms(
     limits: []const f64,
     comptime le_table: anytype,
     histograms: anytype,
-) errors.Error!void {
+) !void {
     if (comptime isTuple(@TypeOf(histograms))) {
         inline for (histograms) |histogram| {
             try emitHistogram(w, name, limits, le_table, histogram);
@@ -149,7 +149,7 @@ fn emitHistogram(
     limits: []const f64,
     comptime le_table: anytype,
     histogram: anytype,
-) errors.Error!void {
+) !void {
     const counts = histogram.counts;
 
     var le_buffer: [le_size]u8 = undefined;
@@ -175,7 +175,7 @@ fn writeBucketLine(
     label_values: anytype,
     le: []const u8,
     count: u64,
-) errors.Error!void {
+) !void {
     try w.writeAll(name);
     try w.writeAll("_bucket{");
     try labels.writeFields(w, label_values);
@@ -196,7 +196,7 @@ fn writeBucket(
     le_buffer: *[le_size]u8,
     count: u64,
     index: usize,
-) errors.Error!void {
+) !void {
     // A comptime family with no limits has an empty table, and indexing an
     // empty array is a compile error even where the loop never runs.
     const use_table = comptime blk: {
@@ -216,7 +216,7 @@ fn writeSuffixed(
     comptime suffix: []const u8,
     label_values: anytype,
     value: anytype,
-) errors.Error!void {
+) !void {
     try w.writeAll(name);
     try w.writeAll(suffix);
     try labels.writeGroup(w, label_values);

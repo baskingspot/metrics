@@ -12,6 +12,17 @@
 const std = @import("std");
 const Io = std.Io;
 
+/// What the comptime `family` can fail with: the sink, plus a label value or
+/// help text that is not valid UTF-8. Everything it can check from the
+/// descriptor is a compile error instead.
+pub const FamilyError = Io.Writer.Error || error{InvalidUtf8};
+
+/// What the comptime `histogramFamily` can fail with: the same, plus counts
+/// that are not cumulative or that overstate the total.
+pub const HistogramError = Io.Writer.Error || error{ InvalidUtf8, InvalidBuckets };
+
+/// What the runtime door can fail with, and one type for a caller that does not
+/// want to care which door produced the bytes.
 pub const Error = Io.Writer.Error || error{
     /// A metric name outside `[a-zA-Z_:][a-zA-Z0-9_:]*`.
     InvalidName,
