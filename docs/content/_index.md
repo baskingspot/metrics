@@ -151,6 +151,29 @@ would have been a comment. With one call there is no object to leak, and the
 document reads top to bottom because the only way to write a sample is inside
 the call that wrote its header.
 
+## Gather into a scratch buffer
+
+The one-call shape needs every sample in one slice, so a consumer that cannot
+allocate supplies the memory. `scratch` reinterprets caller-owned words as that
+slice.
+
+```zig
+{{ load_data(path = "examples/scratch.zig", format = "plain") | trim_end }}
+```
+
+Size it with arithmetic, not by guessing: `@sizeOf` of the sample struct times
+the sample count, rounded up to whole `u64` words. A sample of a few labels plus
+a `u64` is 24 or 32 bytes, so nine samples per worker fit in 288 bytes and 128
+workers in 36 KiB. One buffer serves every family: fill the slice, call
+`family`, and reuse it for the next one, because the write is synchronous and
+nothing here keeps a pointer past the call.
+
+The word type is `u64` for the alignment, not the arithmetic. A `[]u8` would
+need an `@alignCast`, which is a runtime check on a buffer the caller may have
+allocated short; `[]u64` carries alignment 8 in the type, which is all a
+labels-plus-`u64` sample needs. A sample that needs more alignment is a compile
+error that says to use a wider word type.
+
 # The runtime door
 
 ## A name composed at runtime
