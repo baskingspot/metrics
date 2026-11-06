@@ -168,9 +168,12 @@ debug assertion. Monotonicity, the size of the tail, and whether `sum`
 corresponds to the observations are not checked: they are your counters, and a
 library that second-guessed them would have to choose what to do about it.
 
-The one thing the compiler refuses is a labels struct that carries `le`, which
-would put a duplicate label on every bucket line, and a `Metric` whose kind is
-not `.histogram`.
+Two things do not compile, because the bytes would be wrong and no caller could
+repair them after the fact. A labels struct carrying `le` is refused: the writer
+adds `le` to every bucket line, and a second one on the same line is a duplicate
+label name the parser rejects. A `Metric` whose kind is not `.histogram` is
+refused by the histogram writers: `# TYPE` would say `counter` or `gauge` while
+the `_bucket` lines below it said otherwise.
 
 # Values and escaping
 

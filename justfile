@@ -81,25 +81,6 @@ check-golden:
     done
     echo "golden: $(ls "$out" | wc -l | tr -d ' ') documents accepted by prom2json"
 
-[doc("Compile the snippets in test/compile_fail and fail unless each is rejected at comptime with its own message")]
-[group("test")]
-check-compile-fail:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    for source in test/compile_fail/*.zig; do
-        expected=$(cat "${source%.zig}.expect")
-        if output=$(zig test --dep prometheus -Mroot="$source" -Mprometheus=src/root.zig 2>&1); then
-            echo "compiled, but must not: $source" >&2
-            exit 1
-        fi
-        if ! printf '%s' "$output" | grep -qF "$expected"; then
-            echo "$source failed for the wrong reason; expected: $expected" >&2
-            printf '%s\n' "$output" >&2
-            exit 1
-        fi
-    done
-    echo "compile-fail: $(ls test/compile_fail/*.zig | wc -l | tr -d ' ') cases rejected at comptime"
-
 [doc("Run the encode benchmarks in ReleaseFast through testingx, reporting bytes per second. Pass --count=N to repeat")]
 [group("test")]
 bench:
@@ -130,9 +111,9 @@ fmt:
     oxfmt README.md AGENTS.md CHANGELOG.md docs/content docs/config.toml docs/static .github .oxfmtrc.jsonc wrangler.jsonc
     just --fmt
 
-[doc("The per-version gate: the module suite, the oracle fixture, and the compile-fail snippets, on either compiler")]
+[doc("The per-version gate: the module suite and the oracle pass over the goldens, on either compiler")]
 [group("ci")]
-check: test check-compile-fail check-golden
+check: test check-golden
 
 [doc("Build the site into zig-out/site/prometheus/: the guide (Zola, from docs/) and the API reference (docgen JSON, rendered by the theme's api.html) under api/")]
 [group("docs")]

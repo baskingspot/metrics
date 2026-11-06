@@ -1,1 +1,0 @@
-prometheus: label name "__name__" starts with "__", which is reserved

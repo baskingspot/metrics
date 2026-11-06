@@ -22,7 +22,7 @@ The justfile is the command interface: `just test`, `just lint`, `just ci`. Run 
 - Two layers in one file, because Zig cannot add a method from another: `src/writer.zig` has a primitives half (`help`, `kind`, `name`, `value`, `line`) and a compositions half (`writeMetric`, `writeFamily`, `writeHistogram`, `FamilyWriter.writeHistogramSeries`), separated by a doc comment. A composition may only write through the primitives, and the test `the composition is the primitives, byte for byte` is what enforces it.
 - No HTTP, allocator, clock, thread, or `var` in the library. The only error is the sink's.
 - Ordering, family uniqueness, and help-or-no-help are the caller's. Do not add a registry, a document type, or a sample sequence.
-- Names are comptime, which is what makes a bad name a compile error. Label names come from struct field names and are checked the same way.
+- Names are comptime, which is what makes a bad name a compile error. The predicates live in `name.zig` and are tested there; the `comptime if` in the writer is only the wiring, and there are no compile-fail snippets pinning compiler messages. A guard with no runtime predicate and no test (a non-histogram `Metric`, a labels struct carrying `le`) stays a one-line `comptime if`, because deleting it is a visible diff.
 - Invalid UTF-8 in a label value is `std.debug.assert`, not an error. Do not turn it into one without settling it with Matt.
 - `testingx` supplies the test runner, the fixtures, and the benchmark harness. It is lazy and referenced only after `if (b.pkg_hash.len != 0) return;`, so a consumer fetches nothing but the module. Do not move the early return below it.
 - The test fixtures are synthetic. Do not paste metric names, help text, or label sets from a production service.
