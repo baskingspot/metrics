@@ -21,6 +21,7 @@ order, and whether a family has help text are the caller's business.
 - [Histograms](#histograms): `Writer.writeHistogram` takes the caller's limits and cumulative counts and writes `_bucket`, `_sum`, and `_count`.
 - [Values and escaping](#values-and-escaping): a float that reads back as an integer is written as one, and the three bytes that need escaping are escaped.
 - [The primitives](#the-primitives): `Writer` writes one record at a time, and every composition above it is built from those methods.
+- [Limits](#limits): what is deliberately not here, from HTTP to a registry.
 
 The [API reference](api/) documents every public symbol.
 
