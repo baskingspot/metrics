@@ -1,25 +1,30 @@
-//! Sample values: the number at the end of a sample line.
+//! Sample values and bucket labels.
 //!
-//! A float is written the way `prometheus/common`'s `writeFloat` writes it, so
-//! this library and a Go client spell the same number the same way:
-//! `strconv.FormatFloat(f, 'g', -1, 64)`, with `NaN` and the infinities spelled
-//! canonically. The `'g'` choice bounds a sample at 24 characters; positional
-//! only would print 309 for `1e300` and turn a 5 MB scrape into a 50 MB one.
+//! The rule is go-metrics' `expfmt.writeFloat64`: a float that reads back as an
+//! `i64` is written as that integer, `NaN` and the infinities are written
+//! canonically, and everything else goes through Go's `'g'` with the shortest
+//! round-trip digits. An integer type is written as decimal and never touches
+//! `f64`.
 //!
-//! An integer never goes through `f64`, so a `u64` counter above 2^53 keeps
-//! every digit.
+//! Zig's `{d}` alone is not enough, which is why this exists: it prints 301
+//! characters for `1e300`, and `nan` for `NaN`.
 
 const std = @import("std");
 const Io = std.Io;
 const math = std.math;
-const mem = std.mem;
-const testing = std.testing;
 
-/// Longest `{e}` output for an f64 is 24 bytes: sign, digit, point, 16 digits,
-/// `e`, sign, three digits.
+/// Longest formatted value: 24 bytes for a `'g'` form, and the integer form is
+/// shorter. `le` uses the same buffer.
+pub const buffer_size = 32;
+
+/// Longest `{e}` output for an f64: sign, digit, point, 16 digits, `e`, sign,
+/// three digits.
 const scientific_size = 40;
-/// Room for the digits of one exponent form or one positional form.
 const digits_size = 32;
+
+/// 2^63 exactly. `i64` cannot hold it, and Go's conversion of it falls through
+/// to the float path, so the bound here is half-open.
+const two_to_63: f64 = 9223372036854775808.0;
 
 pub fn write(w: *Io.Writer, value: anytype) Io.Writer.Error!void {
     return switch (@typeInfo(@TypeOf(value))) {
@@ -33,24 +38,41 @@ pub fn write(w: *Io.Writer, value: anytype) Io.Writer.Error!void {
     };
 }
 
+/// The same bytes `write` would emit, as a slice, for a caller that needs the
+/// text rather than the write. A bucket label is the reason.
+pub fn format(buffer: *[buffer_size]u8, value: f64) []const u8 {
+    var w: Io.Writer = .fixed(buffer);
+    writeFloat(&w, value) catch unreachable;
+    return w.buffered();
+}
+
 pub fn writeFloat(w: *Io.Writer, value: f64) Io.Writer.Error!void {
     if (math.isNan(value)) return w.writeAll("NaN");
     if (math.isInf(value)) return w.writeAll(if (value > 0) "+Inf" else "-Inf");
-    // `f == 0` is true for negative zero, and Go's writer takes that arm, so
-    // this is the one place a sign is dropped on purpose.
-    if (value == 0) return w.writeAll("0");
 
-    // `{e}` is the shortest round-trip digits in scientific form with no sign
-    // and no padding on the exponent: `1.5e0`, `1e300`, `3.333333333333333e-1`.
-    // Go's `'g'` wants those same digits, spaced differently.
+    // A float that reads back as the same integer is written as one. That is
+    // why a counter of 1e6 prints `1000000` and not `1e+06`, and why negative
+    // zero prints `0`.
+    if (value >= -two_to_63 and value < two_to_63 and @trunc(value) == value) {
+        const whole: i64 = @intFromFloat(value);
+        if (@as(f64, @floatFromInt(whole)) == value) {
+            return w.print("{d}", .{whole});
+        }
+    }
+    return writeGoFloat(w, value);
+}
+
+/// `strconv.FormatFloat(f, 'g', -1, 64)`: the shortest round-trip digits, in
+/// exponent form when the decimal exponent is below -4 or at least 6.
+fn writeGoFloat(w: *Io.Writer, value: f64) Io.Writer.Error!void {
     var buffer: [scientific_size]u8 = undefined;
-    // 24 bytes is the longest an f64 can produce here, so the buffer cannot
-    // overflow and there is no error to report.
+    // `{e}` is the shortest digits in scientific form with no sign and no
+    // padding on the exponent; re-spacing them is all Go's `'g'` needs.
     const text = std.fmt.bufPrint(&buffer, "{e}", .{value}) catch unreachable;
 
     const negative = text[0] == '-';
     const body = if (negative) text[1..] else text;
-    const exp_at = mem.findScalar(u8, body, 'e').?;
+    const exp_at = std.mem.findScalar(u8, body, 'e').?;
     const exponent = std.fmt.parseInt(i32, body[exp_at + 1 ..], 10) catch unreachable;
 
     var digits_buffer: [digits_size]u8 = undefined;
@@ -64,8 +86,6 @@ pub fn writeFloat(w: *Io.Writer, value: f64) Io.Writer.Error!void {
 
     if (negative) try w.writeByte('-');
 
-    // Go picks exponent form below -4 and at 6 and above, where `prec` is 6
-    // whenever the digits are the shortest ones.
     if (exponent < -4 or exponent >= 6) return writeScientific(w, digits, exponent);
     try writePositional(w, digits, exponent);
 }
@@ -103,6 +123,8 @@ fn writePositional(w: *Io.Writer, digits: []const u8, exponent: i32) Io.Writer.E
     try w.writeAll(digits[point_at..]);
 }
 
+const testing = std.testing;
+
 fn expectValue(expected: []const u8, value: f64) !void {
     var buffer: [512]u8 = undefined;
     var w: Io.Writer = .fixed(&buffer);
@@ -110,47 +132,42 @@ fn expectValue(expected: []const u8, value: f64) !void {
     try testing.expectEqualStrings(expected, w.buffered());
 }
 
-// The reference encoder's table, verified against Go's
-// `strconv.FormatFloat(f, 'g', -1, 64)` on 2026-11-05.
-test "the Go 'g' table" {
+test "a float that is a whole integer is written as one" {
+    try expectValue("1000000", 1e6);
+    try expectValue("1234567", 1234567.0);
+    try expectValue("3", 3.0);
+    try expectValue("0", 0.0);
+    try expectValue("0", -0.0);
+    try expectValue("-42", -42.0);
+    try expectValue("9007199254740992", 9007199254740993.0);
+}
+
+test "everything else is Go's 'g' with the shortest digits" {
     try expectValue("0.1", 0.1);
     try expectValue("0.0001", 0.0001);
     try expectValue("1e-07", 1e-7);
-    try expectValue("999999", 999999);
-    try expectValue("1e+06", 1e6);
-    try expectValue("1.234567e+06", 1234567);
     try expectValue("1e+21", 1e21);
     try expectValue("1e+300", 1e300);
-    try expectValue("3", 3.0);
     try expectValue("0.3333333333333333", 1.0 / 3.0);
-    try expectValue("9.007199254740992e+15", 9007199254740993.0);
     try expectValue("2.2250738585072014e-308", 2.2250738585072014e-308);
-    try expectValue("0", -0.0);
-    try expectValue("0", 0.0);
+    try expectValue("5e-324", 5e-324);
+    try expectValue("999999.5", 999999.5);
+    try expectValue("9.223372036854776e+18", 9223372036854775808.0);
+}
+
+test "the non-finite spellings are canonical" {
     try expectValue("NaN", math.nan(f64));
     try expectValue("+Inf", math.inf(f64));
     try expectValue("-Inf", -math.inf(f64));
-    try expectValue("5e-324", 5e-324);
 }
 
-test "an integer keeps every digit" {
+test "an integer type keeps every digit" {
     var buffer: [64]u8 = undefined;
     var w: Io.Writer = .fixed(&buffer);
     try write(&w, math.maxInt(u64));
-    try testing.expectEqualStrings("18446744073709551615", w.buffered());
-
-    var narrow: [64]u8 = undefined;
-    var w2: Io.Writer = .fixed(&narrow);
-    try write(&w2, 9007199254740993);
-    try testing.expectEqualStrings("9007199254740993", w2.buffered());
-}
-
-test "a float literal and an f32 go through the float path" {
-    var buffer: [64]u8 = undefined;
-    var w: Io.Writer = .fixed(&buffer);
-    try write(&w, 1.5);
-    try write(&w, @as(f32, 0.25));
-    try testing.expectEqualStrings("1.50.25", w.buffered());
+    try write(&w, 9007199254740993);
+    try write(&w, -5);
+    try testing.expectEqualStrings("184467440737095516159007199254740993-5", w.buffered());
 }
 
 test "every f64 value survives a round trip" {

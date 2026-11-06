@@ -8,8 +8,6 @@ pub const write_samples = @import("write_samples.zig");
 pub const sinks = @import("sinks.zig");
 pub const escaping = @import("escaping.zig");
 pub const histogram = @import("histogram.zig");
-pub const runtime = @import("runtime.zig");
-pub const iterator = @import("iterator.zig");
 
 test {
     std.testing.refAllDecls(@This());

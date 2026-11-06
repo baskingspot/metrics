@@ -5,9 +5,7 @@ const std = @import("std");
 const prometheus = @import("prometheus");
 
 test "a label name in the reserved namespace does not compile" {
-    var buffer: [512]u8 = undefined;
+    var buffer: [256]u8 = undefined;
     var w: std.Io.Writer = .fixed(&buffer);
-    try prometheus.family(&w, .{ .name = "jobs_total", .kind = .counter }, &.{
-        .{ .labels = .{ .__name__ = "other" }, .value = 1 },
-    });
+    try prometheus.writeMetric(&w, "jobs_total", .{ .__name__ = "other" }, 1);
 }
