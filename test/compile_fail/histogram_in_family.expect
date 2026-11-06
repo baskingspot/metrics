@@ -1,1 +1,0 @@
-prometheus: "requests" is a histogram, so it is written by histogramFamily

@@ -6,20 +6,21 @@ Prometheus text exposition format for Zig: write metrics to any writer, no HTTP.
 
 The exposition bytes are the part every service writes by hand, and they are
 where the bugs are. One unescaped newline in a label value takes down every
-series in the scrape, not one line. A writer that takes a name and a value will
-also let one family's header land between another family's samples. This
-package owns those bytes. It writes text format 0.0.4 to any `std.Io.Writer`,
-so the sink is the caller's problem, and the documents it produces are
-accepted by the parser Prometheus ships.
+series in the scrape, not one line, and Zig's own `{d}` writes `nan` for `NaN`
+and 301 characters for `1e300`. This package owns those two rules and the
+escaping around them. It writes to any `std.Io.Writer`, so a buffer, a file,
+and a socket are the caller's problem.
 
-One call writes one family: the header, then every sample. That is what makes
-a family's samples contiguous instead of contiguous by convention.
+It is a cursor, not a registry. `writeMetric` writes one line, `writeFamily`
+writes `# HELP` and `# TYPE` and hands back a writer for that family's samples,
+and `writeHistogram` writes a classic histogram. Which families appear, in what
+order, and whether a family has help text are the caller's business.
 
-- [Samples](#samples): labels come from a struct's field names, values are written the way a Go client writes them, and an illegal name does not compile.
-- [Families](#families): `family` writes `# HELP`, `# TYPE`, and every sample in one call, so there is no handle to leak and no second way to emit a sample.
-- [The runtime door](#the-runtime-door): `prometheus.runtime` takes the same descriptor as a value, for a name composed at runtime or an embedder's prefix.
-- [Histograms](#histograms): `histogramFamily` takes the caller's limits and cumulative counts and writes `_bucket`, `_sum`, and `_count`.
-- [Collecting from several threads](#collecting-from-several-threads): per-thread counters, a snapshot, and one render, because no library can pick your locking model.
+- [Samples](#samples): `writeMetric` writes one line, and labels come from a struct's field names, so an illegal label name does not compile.
+- [Families](#families): `writeFamily` writes the header and returns the handle its samples go through.
+- [Histograms](#histograms): `writeHistogram` takes the caller's limits and cumulative counts and writes `_bucket`, `_sum`, and `_count`.
+- [Values and escaping](#values-and-escaping): a float that reads back as an integer is written as one, and the three bytes that need escaping are escaped.
+- [The primitives](#the-primitives): `Writer` writes one record at a time, and every composition above it is built from those methods.
 
 The [API reference](api/) documents every public symbol.
 
@@ -52,19 +53,23 @@ No std namespace is named `prometheus`, so nothing needs an alias.
 
 ## Pick a sink
 
-Every writer in this package takes `*std.Io.Writer`. A fixed buffer holds the
-document with no allocation:
+Every writer takes `*std.Io.Writer` and returns `error{WriteFailed}`. A fixed
+buffer holds the document with no allocation:
 
 ```zig
 var buffer: [4096]u8 = undefined;
-var w: std.Io.Writer = .fixed(&buffer);
+var out: std.Io.Writer = .fixed(&buffer);
+var w = prometheus.Writer.init(&out);
 ```
 
-`std.Io.Writer.Allocating` grows a body you will own, and `std.Io.Writer.File`
+`Writer` is the whole interface above the sink: it holds the `*std.Io.Writer`
+and nothing else.
+
+`std.Io.Writer.Allocating` grows a body you will own, and `std.Io.File.Writer`
 writes to a file or a socket. The library never sees either.
 
 ```zig
-{{ load_data(path="examples/sinks.zig", format="plain") | trim_end }}
+{{ load_data(path = "examples/sinks.zig", format = "plain") | trim_end }}
 ```
 
 ## Read the examples
@@ -75,196 +80,134 @@ build.
 
 # Samples
 
-## Labels come from a struct
+## One line
 
-A sample is `{ .labels = ..., .value = ... }`, and the labels argument is any
-struct: each field name is a label name, in declaration order, and each field
-value is the label value. A string field is escaped and an integer field is
-printed in decimal, inside the quotes the parser expects.
-
-A struct with no fields writes no braces at all, so `up 1` and not `up{} 1`.
-
-A label name is a struct field. The grammar is `[a-zA-Z_][a-zA-Z0-9_]*`, and
-the compiler enforces it: a field written as `@"not-a-label"` does not compile.
-
-## Values
-
-A float is written the way `prometheus/common` writes it, which is
-`strconv.FormatFloat(f, 'g', -1, 64)`: the shortest digits that round-trip, in
-exponent form when the decimal exponent is below -4 or at least 6. A float
-`1e6` is `1e+06`, a float `1234567.0` is `1.234567e+06`, `0.0001` stays as it
-is, and `1e300` is five bytes instead of 301.
-
-`NaN`, `+Inf`, and `-Inf` are written exactly so, and zero is `0`. Negative
-zero is `0` too: Go's writer tests `f == 0`, which is true for it, and matching
-that is the point.
-
-An integer never goes through `f64`, so it is exact and positional: the integer
-`1234567` stays `1234567`, and a `u64` above 2^53 prints every digit. A Go
-client passing that count as a float writes `1.234567e+06`, because it has no
-integer path. Floats are the bytes that match Go; a count here is exact by
-design.
-
-## Escaping and UTF-8
-
-Three bytes are escaped inside a label value: backslash, double quote, and
-newline. Two are escaped in help text: backslash and newline. Everything else
-is written raw, including tab, carriage return, NUL, and any valid UTF-8.
+`writeMetric` writes a name, its labels, a value, and a newline.
 
 ```zig
-{{ load_data(path="examples/escaping.zig", format = "plain") | trim_end }}
+{{ load_data(path = "examples/sinks.zig", format = "plain") | trim_end }}
 ```
 
-Invalid UTF-8 is the other failure that costs the whole scrape. The writer
-checks each label value and returns `error.InvalidUtf8` rather than emit
-a document that is structurally fine and semantically poisoned. A label value
-is caught as it is written, so that one failure can leave a partial line in the
-buffer; every other check runs before the first byte, so a bad name, kind, or
-bucket set writes nothing. A caller that streams to a socket should render into
-a buffer first.
+The trailing newline is not optional: the parser rejects a document whose last
+line has none, and every writer here adds one.
+
+## Labels come from a struct
+
+The labels argument is any struct: each field name is a label name, in
+declaration order, and each field value is the label value. A string field is
+escaped and an integer field is printed in decimal, inside the quotes the parser
+expects. A struct with no fields writes no braces at all, so `up 1` and not
+`up{} 1`.
+
+A label name is a struct field. The grammar is `[a-zA-Z_][a-zA-Z0-9_]*`, the
+`__` prefix is reserved (`__name__` is the series name the parser builds from
+the line, so it rejects a label that claims it), and the compiler enforces both:
+a field written as `@"not-a-label"` or `.__name__` does not compile.
 
 # Families
 
-## One call, header first
+## The header, then the samples
 
-`family` writes `# HELP`, `# TYPE`, and every sample, and returns when the
-family is done.
-
-```zig
-{{ load_data(path="examples/write_samples.zig", format="plain") | trim_end }}
-```
-
-`samples` is a slice, an array, a tuple, or an iterator whose elements have
-`.labels` and `.value`. The descriptor is comptime, so a bad
-metric name, a bad label name, and a kind that belongs to `histogramFamily` do
-not compile.
-
-`# HELP` is written when the family has help text and omitted when it does not.
-`# TYPE` is always written, including for `.untyped`.
-
-## Why one call
-
-The format asks that a family's samples are contiguous, and a writer that hands
-back a handle cannot guarantee it: `*std.Io.Writer` is copyable, so two live
-handles interleave however the type system is asked to behave, and the rule
-would have been a comment. With one call there is no object to leak, and the
-document reads top to bottom because the only way to write a sample is inside
-the call that wrote its header.
-
-## Stream a family instead of gathering it
-
-`samples` is a slice, an array, a tuple, or an iterator: any struct, or pointer
-to one, with a `next() ?Sample` method.
+`writeFamily` writes `# HELP` and `# TYPE` and returns a handle. Its `write`
+method is `writeMetric` with the family's name, so a sample line cannot be
+written under another name by accident.
 
 ```zig
-{{ load_data(path = "examples/iterator.zig", format = "plain") | trim_end }}
+{{ load_data(path = "examples/write_samples.zig", format = "plain") | trim_end }}
 ```
 
-An iterator is how a consumer that cannot allocate renders a family. It yields
-each sample as the writer asks for it, and the call still holds the writer for
-the family's whole duration, so the header and its samples stay together.
+An empty `help` writes the `# HELP` line without text. The kind is one of
+`counter`, `gauge`, `histogram`, and `untyped`, and it goes on the `# TYPE`
+line as written.
 
-A slice is simpler when the samples already exist: one `for` loop, no `next`
-method, and every sample is checked before the first byte is written. An
-iterator is checked as it goes, so a histogram iterator that returns
-`error.InvalidBuckets` can leave the header and the samples before it in the
-writer. Render into a buffer first if that matters.
+## Ordering is yours
 
-# The runtime door
-
-## A name composed at runtime
-
-The comptime door cannot see a name you build, so `prometheus.runtime` takes
-the same descriptor as a value and validates it at run time.
-
-```zig
-{{ load_data(path="examples/runtime.zig", format = "plain") | trim_end }}
-```
-
-The error set is the same for both doors: the sink's failure, plus
-`InvalidName`, `InvalidUtf8`, `InvalidBuckets`, and `MismatchedKind`, and every
-one of them has a path that returns it. What differs is where a mistake is
-caught. The metric name, the kind, and the limits
-are values, so the runtime door returns an error and the comptime door does
-not compile. A label name and a duplicated `le` come from a type, so both doors
-reject those at compile time.
-
-## The same bytes
-
-Both doors run the same emitter. The comptime door precomputes the header as
-one literal and the histogram `le` values as a table, and the runtime door
-formats each as it goes, but the sample loop is written once. Every golden
-document in the repository's fixture archive is rendered through both doors and
-compared byte for byte.
+Nothing here knows which families you have written or in what order. Two calls
+to `writeFamily` with the same name write two headers, and the parser accepts
+it; a sample written through the second handle lands after the second header.
+The handle exists to save typing the name and to keep the field order, not to
+enforce a document shape.
 
 # Histograms
 
 ## Cumulative counts, written as buckets
 
-The descriptor carries the bucket upper bounds in `limits`. Each sample carries
-its cumulative counts, its sum, and its total: `counts[i]` is the number of
-observations at or below `limits[i]`. The last count is at most the total,
-because an observation above the top limit belongs only to the implicit `+Inf`
-bucket, which is written from `count`. The caller keeps all of it; this library
-writes the bytes.
+`writeHistogram` writes the header, then one `_bucket` line per limit, the
+implicit `+Inf` bucket, `_sum`, and `_count`. The counts are cumulative:
+`counts[i]` is the number of observations at or below `limits[i]`. The last
+finite count is at most the total, because an observation above the top limit
+belongs only to the `+Inf` bucket, which is written from `count`.
 
 ```zig
-{{ load_data(path="examples/histogram.zig", format = "plain") | trim_end }}
+{{ load_data(path = "examples/histogram.zig", format = "plain") | trim_end }}
 ```
 
-The writer emits one `_bucket` line per limit, then `_bucket{le="+Inf"}` from
-`count`, then `_sum` and `_count`. The `le` value goes through the same float
-formatter as a sample value, so a limit of `1e6` is `le="1e+06"`.
+An empty `limits` slice writes one `+Inf` bucket, `_sum`, and `_count`.
 
-An empty `limits` slice is legal: the family is one `+Inf` bucket, `_sum`, and
-`_count`.
+## What is checked, and what is not
 
-## What the writer checks
+A length mismatch between `limits` and `counts` is a caller bug caught by a
+debug assertion. Monotonicity, the size of the tail, and whether `sum`
+corresponds to the observations are not checked: they are your counters, and a
+library that second-guessed them would have to choose what to do about it.
 
-Every check runs before the first byte is written, so a rejected family leaves
-the writer exactly as it found it. `error.InvalidBuckets` comes back when any of
-these fails, in every build mode; the comptime door also turns the limit check
-into a compile error.
+The one thing the compiler refuses is a labels struct that carries `le`, which
+would put a duplicate label on every bucket line, and a `Metric` whose kind is
+not `.histogram`.
 
-- `counts.len` equals `limits.len`.
-- The limits are finite and strictly ascending, so no `NaN`, no repeat, and no
-  `+Inf`, which the implicit bucket already owns.
-- The counts are monotone non-decreasing.
-- The last count is at most `count`. It is equal when every observation is at
-  or below the top limit, and lower when the family has a tail.
+# Values and escaping
 
-A histogram that emits wrong bytes is the failure this package exists to
-prevent, so a mismatched pair of slices is an error rather than an assertion
-that disappears in a release build.
+## Values
 
-# Collecting from several threads
+A float that reads back as the same integer is written as that integer. `1e6`
+is `1000000`, `3.0` is `3`, and `-0.0` is `0`. Everything else is Go's `'g'`
+with the shortest round-trip digits, in exponent form when the decimal exponent
+is below -4 or at least 6, so `1e21` is `1e+21`, `1e300` is `1e+300`, and
+`0.0001` stays as it is.
 
-This library writes bytes. Where the numbers come from between two scrapes is
-the application's design, and the shape that works is the same one that works
-for any read-mostly counter.
+`NaN`, `+Inf`, and `-Inf` are written exactly so.
 
-## Per-thread state
+An integer type never goes through `f64`, so a `u64` above 2^53 prints every
+digit. A Go client passing that count as a float writes `9007199254740992`,
+because it has no integer path.
 
-Give each thread its own counters as plain fields on the struct that owns the
-thing being counted. An add is an add, and there is no lock on the request path
-and no atomic on the hot path. A connection counter lives on the listener, a
-queue depth lives on the queue, and a histogram's buckets live beside the code
-that observes them.
+## Escaping
 
-That costs one decision per counter and buys the property that a scrape never
-sees a torn value.
+Three bytes are escaped inside a label value: backslash, double quote, and
+newline. Two are escaped in help text: backslash and newline. Everything else is
+written raw, including tab, carriage return, NUL, and any valid UTF-8.
 
-## Snapshot, then render
+```zig
+{{ load_data(path = "examples/escaping.zig", format = "plain") | trim_end }}
+```
 
-A scrape is sequential. Ask each thread for a copy of its counters into memory
-the scrape owns, an arena that is reused from one scrape to the next. When
-every thread has answered, sort the copies by their labels, sum the ones that
-are equal, and write the document one family at a time.
+Invalid UTF-8 is not an error here. It is `std.debug.assert` in the writer,
+because a label value that comes from outside the program is a bug to catch in
+development, not a condition to thread through every call site in a release
+build. A caller that takes user input checks it before it gets here.
 
-The sorting and summing step is where a document of `n` copies becomes `k`
-series, and an `O(n log n)` sort beats a pairwise scan by a wide margin once
-`k` is large. That step is not in this package: it needs an allocator and an
-ordering decision, and both are the caller's.
+# The primitives
+
+`Writer` writes one expfmt record per call and knows nothing else:
+
+- `help(name, text)` writes `# HELP`, with the text escaped.
+- `kind(name, k)` writes `# TYPE`.
+- `name(name, labels)` writes `name{label="value",...}` and no trailing space. The labels are a struct, or a tuple of structs written in order.
+- `value(v)` writes a space, the value, and the newline.
+- `line(bytes)` writes bytes you formatted yourself.
+
+Every composition on this page is built from those five, and a test holds it to
+that: the first `_bucket` line `writeHistogram` writes must equal the same line
+written by hand with `name` and `value`. A caller that needs a shape this
+library does not have, such as a summary or an exemplar, writes it from the
+primitives and gets the same values and escaping.
+
+```zig
+var out: std.Io.Writer = .fixed(&buffer);
+var w = prometheus.Writer.init(&out);
+try w.name("custom_total", .{ .kind = "custom" });
+try w.value(@as(u64, 7));
+```
 
 # Limits
 
@@ -272,15 +215,12 @@ What is not here, named so nobody has to look.
 
 - HTTP. There is no listener, no handler, no `Content-Type` constant, and no
   status code. Wrap a `std.Io.Writer`.
+- Ordering, family uniqueness, and a document model. The writer lays down lines.
 - Counters and gauges. A counter is a `u64` and an add, and the concurrency
-  model around it is the application's most interesting metrics decision. The
-  writers take the number.
+  model around it is the application's decision. `writeMetric` takes the number.
 - A registry, global state, or a `var` of any kind.
-- `aggregate` and `render`: a whole document from a slice of samples, with the
-  family grouping done for you.
-- Streaming one family a sample at a time. The one-call shape is what makes
-  contiguity a fact, and a caller that cannot produce a slice has to.
-- OpenMetrics 1.0, exemplars, `_created` series, and native histograms. Text
-  format 0.0.4 is what a scraper accepts.
+- Validation of a histogram's counters beyond the length. Monotone counts, a
+  consistent tail, and a matching `sum` are the caller's.
+- OpenMetrics 1.0, exemplars, `_created` series, and native histograms.
 - `process_*` collectors. `getrusage` and `/proc/self` are the operating
-  system's numbers, and the choice to publish them is the application's.
+  system's numbers.

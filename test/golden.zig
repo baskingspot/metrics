@@ -1,189 +1,194 @@
-//! Document-level golden tests, and the runtime door's error paths.
+//! Document-level golden tests.
 //!
-//! Every golden case runs through `prometheus.family` (comptime descriptor) and
-//! `prometheus.runtime.family` (runtime descriptor), and both must produce the
-//! bytes in `testdata/golden.txtar`. The two doors share one emitter, so the
-//! comparison is a free differential check on the whole encoder.
+//! Each case writes with the public API and compares against its section of
+//! `testdata/golden.txtar`, which is embedded at compile time. The archive holds
+//! the expected bytes only: an input here is a Zig call, not text.
 
 const std = @import("std");
 const prometheus = @import("prometheus");
 const testingx = @import("testingx");
 const testing = std.testing;
 const Io = std.Io;
-const Family = prometheus.Family;
 
 const fixtures = testingx.fixtures(@embedFile("testdata/golden.txtar"));
 
 const document_size = 16 * 1024;
 
-fn expectSamples(comptime name: []const u8, comptime f: Family, samples: anytype) !void {
-    const expected = fixtures.get(name);
-
-    var comptime_buffer: [document_size]u8 = undefined;
-    var comptime_writer: Io.Writer = .fixed(&comptime_buffer);
-    try prometheus.family(&comptime_writer, f, samples);
-
-    var runtime_buffer: [document_size]u8 = undefined;
-    var runtime_writer: Io.Writer = .fixed(&runtime_buffer);
-    try prometheus.runtime.family(&runtime_writer, f, samples);
-
-    try testing.expectEqualStrings(expected, comptime_writer.buffered());
-    try testing.expectEqualStrings(comptime_writer.buffered(), runtime_writer.buffered());
-}
-
-fn expectHistograms(comptime name: []const u8, comptime f: Family, histograms: anytype) !void {
-    const expected = fixtures.get(name);
-
-    var comptime_buffer: [document_size]u8 = undefined;
-    var comptime_writer: Io.Writer = .fixed(&comptime_buffer);
-    try prometheus.histogramFamily(&comptime_writer, f, histograms);
-
-    var runtime_buffer: [document_size]u8 = undefined;
-    var runtime_writer: Io.Writer = .fixed(&runtime_buffer);
-    try prometheus.runtime.histogramFamily(&runtime_writer, f, histograms);
-
-    try testing.expectEqualStrings(expected, comptime_writer.buffered());
-    try testing.expectEqualStrings(comptime_writer.buffered(), runtime_writer.buffered());
+fn expect(comptime name: []const u8, actual: []const u8) !void {
+    try testing.expectEqualStrings(fixtures.get(name), actual);
 }
 
 test "a labeled family" {
-    try expectSamples("labeled.expected", .{
+    var buffer: [document_size]u8 = undefined;
+    var out: Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
+    const family = try prometheus.writeFamily(&w, .{
         .name = "requests_total",
         .kind = .counter,
         .help = "Requests served, by method and status.",
-    }, &.{
-        .{ .labels = .{ .method = "GET", .status = "200" }, .value = 1841 },
-        .{ .labels = .{ .method = "POST", .status = "500" }, .value = 3 },
     });
+    try family.write(.{ .method = "GET", .status = "200" }, 1841);
+    try family.write(.{ .method = "POST", .status = "500" }, 3);
+    try expect("labeled.expected", out.buffered());
 }
 
 test "an unlabeled family" {
-    try expectSamples("unlabeled.expected", .{
+    var buffer: [document_size]u8 = undefined;
+    var out: Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
+    const family = try prometheus.writeFamily(&w, .{
         .name = "up",
         .kind = .gauge,
         .help = "One per scrape.",
-    }, &.{.{ .labels = .{}, .value = 1 }});
+    });
+    try family.write(.{}, 1);
+    try expect("unlabeled.expected", out.buffered());
+}
+
+test "one line with no header" {
+    var buffer: [document_size]u8 = undefined;
+    var out: Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
+    try prometheus.writeMetric(&w, "up", .{}, 1);
+    try expect("line_only.expected", out.buffered());
 }
 
 test "an integer label value" {
-    try expectSamples("integer_label.expected", .{
+    var buffer: [document_size]u8 = undefined;
+    var out: Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
+    const family = try prometheus.writeFamily(&w, .{
         .name = "listener_port",
         .kind = .gauge,
-    }, &.{.{ .labels = .{ .port = 5432 }, .value = 1 }});
+    });
+    try family.write(.{ .port = 5432 }, 1);
+    try expect("integer_label.expected", out.buffered());
 }
 
 test "a label value escapes backslash quote and newline" {
-    try expectSamples("escape_label.expected", .{
+    var buffer: [document_size]u8 = undefined;
+    var out: Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
+    const family = try prometheus.writeFamily(&w, .{
         .name = "worker_log",
         .kind = .counter,
-    }, &.{.{ .labels = .{ .message = "say \"hi\"\nthen\\leave" }, .value = 1 }});
+    });
+    try family.write(.{ .message = "say \"hi\"\nthen\\leave" }, 1);
+    try expect("escape_label.expected", out.buffered());
 }
 
 test "HELP escapes a backslash and a newline, not a quote" {
-    try expectSamples("escape_help.expected", .{
+    var buffer: [document_size]u8 = undefined;
+    var out: Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
+    const family = try prometheus.writeFamily(&w, .{
         .name = "escaped",
         .kind = .gauge,
         .help = "a\\b\"c\nd",
-    }, &.{.{ .labels = .{}, .value = 1 }});
-}
-
-test "a family with no samples is its header alone" {
-    try expectSamples("header_only.expected", .{
-        .name = "empty_total",
-        .kind = .counter,
-        .help = "Nothing yet.",
-    }, .{});
-}
-
-test "an empty HELP writes no line" {
-    try expectSamples("empty_help.expected", .{
-        .name = "bare",
-        .kind = .counter,
-        .help = "",
-    }, &.{.{ .labels = .{}, .value = 0 }});
-}
-
-test "the Go 'g' value table" {
-    try expectSamples("values.expected", .{
-        .name = "values",
-        .kind = .untyped,
-    }, &.{
-        .{ .labels = .{ .case = "one_tenth" }, .value = 0.1 },
-        .{ .labels = .{ .case = "ten_thousandth" }, .value = 0.0001 },
-        .{ .labels = .{ .case = "small" }, .value = 1e-7 },
-        .{ .labels = .{ .case = "nines" }, .value = 999999 },
-        .{ .labels = .{ .case = "million" }, .value = 1e6 },
-        .{ .labels = .{ .case = "million_and_change" }, .value = 1234567.0 },
-        .{ .labels = .{ .case = "large" }, .value = 1e21 },
-        .{ .labels = .{ .case = "huge" }, .value = 1e300 },
-        .{ .labels = .{ .case = "three" }, .value = 3.0 },
-        .{ .labels = .{ .case = "third" }, .value = 1.0 / 3.0 },
-        .{ .labels = .{ .case = "two_to_53" }, .value = 9007199254740993.0 },
-        .{ .labels = .{ .case = "min_normal" }, .value = 2.2250738585072014e-308 },
-        .{ .labels = .{ .case = "negative_zero" }, .value = -0.0 },
-        .{ .labels = .{ .case = "zero" }, .value = 0.0 },
-        .{ .labels = .{ .case = "nan" }, .value = std.math.nan(f64) },
-        .{ .labels = .{ .case = "inf" }, .value = std.math.inf(f64) },
-        .{ .labels = .{ .case = "negative_inf" }, .value = -std.math.inf(f64) },
-        .{ .labels = .{ .case = "subnormal" }, .value = 5e-324 },
     });
+    try family.write(.{}, 1);
+    try expect("escape_help.expected", out.buffered());
 }
 
-test "an integer keeps every digit" {
-    try expectSamples("integers.expected", .{
-        .name = "counters",
-        .kind = .untyped,
-    }, &.{
-        .{ .labels = .{ .case = "u64_max" }, .value = std.math.maxInt(u64) },
-        .{ .labels = .{ .case = "above_2_53" }, .value = 9007199254740993 },
+test "an empty HELP writes the line without text" {
+    var buffer: [document_size]u8 = undefined;
+    var out: Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
+    const family = try prometheus.writeFamily(&w, .{ .name = "bare", .kind = .counter });
+    try family.write(.{}, 0);
+    try expect("empty_help.expected", out.buffered());
+}
+
+test "three families in one document" {
+    var buffer: [document_size]u8 = undefined;
+    var out: Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
+
+    const first = try prometheus.writeFamily(&w, .{
+        .name = "first_total",
+        .kind = .counter,
+        .help = "First family.",
     });
+    try first.write(.{ .k = "a" }, 1);
+    try first.write(.{ .k = "b" }, 2);
+
+    const second = try prometheus.writeFamily(&w, .{ .name = "second", .kind = .gauge });
+    try second.write(.{}, 3);
+
+    const third = try prometheus.writeFamily(&w, .{ .name = "third_bytes", .kind = .untyped });
+    try third.write(.{}, 4);
+
+    try expect("three_families.expected", out.buffered());
 }
 
 test "a histogram with one bucket" {
-    try expectHistograms("histogram_one_bucket.expected", .{
-        .name = "latency_seconds",
-        .kind = .histogram,
-        .limits = &.{10},
-    }, &.{.{ .labels = .{}, .counts = &[_]u64{3}, .sum = 5.5, .count = 3 }});
+    var buffer: [document_size]u8 = undefined;
+    var out: Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
+    try prometheus.writeHistogram(
+        &w,
+        .{ .name = "latency_seconds", .kind = .histogram },
+        .{},
+        &.{10},
+        &[_]u64{3},
+        5.5,
+        3,
+    );
+    try expect("histogram_one_bucket.expected", out.buffered());
 }
 
 test "a histogram with only the implicit bucket" {
-    try expectHistograms("histogram_inf_only.expected", .{
-        .name = "latency_seconds",
-        .kind = .histogram,
-    }, &.{.{ .labels = .{}, .counts = &[_]u64{}, .sum = 1.25, .count = 7 }});
+    var buffer: [document_size]u8 = undefined;
+    var out: Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
+    try prometheus.writeHistogram(
+        &w,
+        .{ .name = "latency_seconds", .kind = .histogram },
+        .{},
+        &.{},
+        &[_]u64{},
+        1.25,
+        7,
+    );
+    try expect("histogram_inf_only.expected", out.buffered());
+}
+
+// Observations above the top limit land only in the implicit `+Inf` bucket, so
+// the last finite count can be below the total.
+test "a histogram with a tail above its top limit" {
+    var buffer: [document_size]u8 = undefined;
+    var out: Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
+    try prometheus.writeHistogram(
+        &w,
+        .{ .name = "latency_seconds", .kind = .histogram },
+        .{},
+        &.{ 10, 20 },
+        &[_]u64{ 1, 2 },
+        45,
+        3,
+    );
+    try expect("histogram_tail.expected", out.buffered());
 }
 
 test "le uses the same formatter as a sample value" {
-    try expectHistograms("histogram_le_format.expected", .{
-        .name = "latency_seconds",
-        .kind = .histogram,
-        .limits = &.{ 1e-7, 0.001, 1e6 },
-    }, &.{.{
-        .labels = .{ .method = "GET" },
-        .counts = &[_]u64{ 0, 1, 1 },
-        .sum = 0.001,
-        .count = 1,
-    }});
+    var buffer: [document_size]u8 = undefined;
+    var out: Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
+    try prometheus.writeHistogram(
+        &w,
+        .{ .name = "latency_seconds", .kind = .histogram },
+        .{ .method = "GET" },
+        &.{ 1e-7, 0.001, 1e6 },
+        &[_]u64{ 0, 1, 1 },
+        0.001,
+        1,
+    );
+    try expect("histogram_le_format.expected", out.buffered());
 }
 
-// Observations above the top limit land only in the implicit `+Inf` bucket,
-// so the last finite count is below the total.
-test "a histogram with a tail above its top limit" {
-    try expectHistograms("histogram_tail.expected", .{
-        .name = "latency_seconds",
-        .kind = .histogram,
-        .limits = &.{ 10, 20 },
-    }, &.{.{
-        .labels = .{},
-        .counts = &[_]u64{ 1, 2 },
-        .sum = 45,
-        .count = 3,
-    }});
-}
-
-// Twenty buckets is an ordinary layout, and the comptime door used to run out
-// of branches formatting the `le` table at seventeen.
+// Twenty buckets is an ordinary layout; the comptime `le` formatting used to
+// run out of branches at seventeen.
 test "a histogram with thirty limits" {
     const limits = comptime blk: {
         var out: [30]f64 = undefined;
@@ -195,157 +200,129 @@ test "a histogram with thirty limits" {
         for (0..30) |i| out[i] = i + 1;
         break :blk out;
     };
-    try expectHistograms("histogram_thirty.expected", .{
-        .name = "latency_seconds",
-        .kind = .histogram,
-        .limits = &limits,
-    }, &.{.{
-        .labels = .{},
-        .counts = &counts,
-        .sum = 465,
-        .count = 30,
-    }});
+    var buffer: [document_size]u8 = undefined;
+    var out: Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
+    try prometheus.writeHistogram(
+        &w,
+        .{ .name = "latency_seconds", .kind = .histogram },
+        .{},
+        &limits,
+        &counts,
+        465,
+        30,
+    );
+    try expect("histogram_thirty.expected", out.buffered());
 }
 
-test "three families in one document do not interleave" {
-    const expected = fixtures.get("three_families.expected");
-
-    const first = Family{ .name = "first_total", .kind = .counter, .help = "First family." };
-    const second = Family{ .name = "second", .kind = .gauge };
-    const third = Family{ .name = "third_bytes", .kind = .untyped, .help = "" };
-
-    var comptime_buffer: [document_size]u8 = undefined;
-    var comptime_writer: Io.Writer = .fixed(&comptime_buffer);
-    try prometheus.family(&comptime_writer, .{
-        .name = "first_total",
-        .kind = .counter,
-        .help = "First family.",
-    }, &.{
-        .{ .labels = .{ .k = "a" }, .value = 1 },
-        .{ .labels = .{ .k = "b" }, .value = 2 },
-    });
-    try prometheus.family(&comptime_writer, .{ .name = "second", .kind = .gauge }, &.{
-        .{ .labels = .{}, .value = 3 },
-    });
-    try prometheus.family(&comptime_writer, .{
-        .name = "third_bytes",
-        .kind = .untyped,
-        .help = "",
-    }, &.{.{ .labels = .{}, .value = 4 }});
-
-    var runtime_buffer: [document_size]u8 = undefined;
-    var runtime_writer: Io.Writer = .fixed(&runtime_buffer);
-    try prometheus.runtime.family(&runtime_writer, first, &.{
-        .{ .labels = .{ .k = "a" }, .value = 1 },
-        .{ .labels = .{ .k = "b" }, .value = 2 },
-    });
-    try prometheus.runtime.family(&runtime_writer, second, &.{
-        .{ .labels = .{}, .value = 3 },
-    });
-    try prometheus.runtime.family(&runtime_writer, third, &.{
-        .{ .labels = .{}, .value = 4 },
-    });
-
-    try testing.expectEqualStrings(expected, comptime_writer.buffered());
-    try testing.expectEqualStrings(comptime_writer.buffered(), runtime_writer.buffered());
+test "the value table" {
+    var buffer: [document_size]u8 = undefined;
+    var out: Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
+    const family = try prometheus.writeFamily(&w, .{ .name = "values", .kind = .untyped });
+    const cases = [_]struct { name: []const u8, value: f64 }{
+        .{ .name = "one_tenth", .value = 0.1 },
+        .{ .name = "ten_thousandth", .value = 0.0001 },
+        .{ .name = "small", .value = 1e-7 },
+        .{ .name = "nines", .value = 999999.0 },
+        .{ .name = "million", .value = 1e6 },
+        .{ .name = "million_and_change", .value = 1234567.0 },
+        .{ .name = "large", .value = 1e21 },
+        .{ .name = "huge", .value = 1e300 },
+        .{ .name = "three", .value = 3.0 },
+        .{ .name = "third", .value = 1.0 / 3.0 },
+        .{ .name = "two_to_53", .value = 9007199254740993.0 },
+        .{ .name = "min_normal", .value = 2.2250738585072014e-308 },
+        .{ .name = "negative_zero", .value = -0.0 },
+        .{ .name = "zero", .value = 0.0 },
+        .{ .name = "nan", .value = std.math.nan(f64) },
+        .{ .name = "inf", .value = std.math.inf(f64) },
+        .{ .name = "negative_inf", .value = -std.math.inf(f64) },
+        .{ .name = "subnormal", .value = 5e-324 },
+    };
+    for (cases) |case| try family.write(.{ .case = case.name }, case.value);
+    try expect("values.expected", out.buffered());
 }
 
-/// A sample type the error cases can leave empty without an inference problem.
-const CounterSample = struct {
-    labels: struct { k: u8 = 0 },
-    value: u64,
-};
-
-test "the runtime door reports what the comptime door refuses to compile" {
-    var buffer: [1024]u8 = undefined;
-    const no_samples = &[_]CounterSample{};
-
-    var w1: Io.Writer = .fixed(&buffer);
-    try testing.expectError(error.InvalidName, prometheus.runtime.family(
-        &w1,
-        .{ .name = "1_requests", .kind = .counter },
-        no_samples,
-    ));
-
-    const bad_utf8: []const u8 = &.{0xff};
-    var w3: Io.Writer = .fixed(&buffer);
-    try testing.expectError(error.InvalidUtf8, prometheus.runtime.family(
-        &w3,
-        .{ .name = "ok", .kind = .counter },
-        &.{.{ .labels = .{ .k = bad_utf8 }, .value = 1 }},
-    ));
-
-    var w4: Io.Writer = .fixed(&buffer);
-    try testing.expectError(error.InvalidUtf8, prometheus.runtime.family(
-        &w4,
-        .{ .name = "ok", .kind = .counter, .help = bad_utf8 },
-        no_samples,
-    ));
-
-    var w5: Io.Writer = .fixed(&buffer);
-    try testing.expectError(error.MismatchedKind, prometheus.runtime.family(
-        &w5,
-        .{ .name = "ok", .kind = .histogram },
-        no_samples,
-    ));
-
-    var w6: Io.Writer = .fixed(&buffer);
-    try testing.expectError(error.MismatchedKind, prometheus.runtime.histogramFamily(
-        &w6,
-        .{ .name = "ok", .kind = .counter },
-        &[_]HistogramSample{},
-    ));
-
-    const countOne = &[_]u64{1};
-    var w8: Io.Writer = .fixed(&buffer);
-    try testing.expectError(error.InvalidBuckets, prometheus.runtime.histogramFamily(
-        &w8,
-        .{ .name = "ok", .kind = .histogram, .limits = &.{ 2, 1 } },
-        &.{.{ .labels = .{}, .counts = countOne, .sum = 0, .count = 1 }},
-    ));
-
-    var w9: Io.Writer = .fixed(&buffer);
-    try testing.expectError(error.InvalidBuckets, prometheus.runtime.histogramFamily(
-        &w9,
-        .{ .name = "ok", .kind = .histogram, .limits = &.{1} },
-        &.{.{ .labels = .{}, .counts = &[_]u64{}, .sum = 0, .count = 0 }},
-    ));
-
-    const notCumulative = &[_]u64{ 2, 1 };
-    var w10: Io.Writer = .fixed(&buffer);
-    try testing.expectError(error.InvalidBuckets, prometheus.runtime.histogramFamily(
-        &w10,
-        .{ .name = "ok", .kind = .histogram, .limits = &.{ 1, 2 } },
-        &.{.{ .labels = .{}, .counts = notCumulative, .sum = 0, .count = 1 }},
-    ));
-
-    const overTotal = &[_]u64{ 1, 4 };
-    var w11: Io.Writer = .fixed(&buffer);
-    try testing.expectError(error.InvalidBuckets, prometheus.runtime.histogramFamily(
-        &w11,
-        .{ .name = "ok", .kind = .histogram, .limits = &.{ 1, 2 } },
-        &.{.{ .labels = .{}, .counts = overTotal, .sum = 0, .count = 3 }},
-    ));
-
-    // Every numeric check runs before the header, so a rejected family writes
-    // nothing at all.
-    try testing.expectEqualStrings("", w11.buffered());
-
-    const nanLimit = &[_]f64{std.math.nan(f64)};
-    var w12: Io.Writer = .fixed(&buffer);
-    try testing.expectError(error.InvalidBuckets, prometheus.runtime.histogramFamily(
-        &w12,
-        .{ .name = "ok", .kind = .histogram, .limits = nanLimit },
-        &.{.{ .labels = .{}, .counts = countOne, .sum = 0, .count = 1 }},
-    ));
+test "an integer keeps every digit" {
+    var buffer: [document_size]u8 = undefined;
+    var out: Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
+    const family = try prometheus.writeFamily(&w, .{ .name = "counters", .kind = .untyped });
+    try family.write(.{ .case = "u64_max" }, std.math.maxInt(u64));
+    try family.write(.{ .case = "above_2_53" }, 9007199254740993);
+    try expect("integers.expected", out.buffered());
 }
 
-const HistogramSample = struct {
-    labels: struct { k: []const u8 },
-    counts: []const u64,
-    sum: f64,
-    count: u64,
-};
+// A rejected histograms-length pair is a caller bug the assert catches; the
+// property here is the bytes, over generated bucket sets.
+const HistogramCase = struct { limits: []const f64, counts: []const u64, sum: f64, count: u64 };
+
+test "property: a histogram document keeps every bucket invariant" {
+    var prng: std.Random.DefaultPrng = .init(testing.random_seed);
+    const random = prng.random();
+
+    var limits: [8]f64 = undefined;
+    var counts: [8]u64 = undefined;
+    var round: usize = 0;
+    while (round < 2000) : (round += 1) {
+        const bucket_count = random.intRangeAtMost(usize, 0, 8);
+        var previous: f64 = 0;
+        var cumulative: u64 = 0;
+        for (0..bucket_count) |i| {
+            previous += random.float(f64) * 100 + 1;
+            cumulative += random.intRangeAtMost(u64, 0, 5);
+            limits[i] = previous;
+            counts[i] = cumulative;
+        }
+        const tail = random.intRangeAtMost(u64, 0, 3);
+        const total = cumulative + tail;
+
+        var buffer: [document_size]u8 = undefined;
+        var out: Io.Writer = .fixed(&buffer);
+        var w = prometheus.Writer.init(&out);
+        try prometheus.writeHistogram(
+            &w,
+            .{ .name = "h", .kind = .histogram },
+            .{ .k = "v" },
+            limits[0..bucket_count],
+            counts[0..bucket_count],
+            random.float(f64) * 1000,
+            total,
+        );
+
+        var lines: [32][]const u8 = undefined;
+        var line_count: usize = 0;
+        var split = std.mem.splitScalar(u8, out.buffered(), '\n');
+        while (split.next()) |line| {
+            if (line.len == 0) continue;
+            lines[line_count] = line;
+            line_count += 1;
+        }
+
+        try testing.expectEqualStrings("# HELP h", lines[0]);
+        try testing.expectEqualStrings("# TYPE h histogram", lines[1]);
+        try testing.expectEqual(bucket_count + 5, line_count);
+
+        for (0..bucket_count) |i| {
+            const line = lines[2 + i];
+            try testing.expect(std.mem.startsWith(u8, line, "h_bucket{k=\"v\",le=\""));
+            try testing.expectEqual(limits[i], try std.fmt.parseFloat(f64, try lineLe(line)));
+            try testing.expectEqual(counts[i], try std.fmt.parseInt(u64, lineValue(line), 10));
+        }
+
+        const inf_line = lines[2 + bucket_count];
+        try testing.expect(std.mem.startsWith(u8, inf_line, "h_bucket{k=\"v\",le=\"+Inf\"} "));
+        try testing.expectEqual(total, try std.fmt.parseInt(u64, lineValue(inf_line), 10));
+
+        try testing.expect(std.mem.startsWith(u8, lines[3 + bucket_count], "h_sum{k=\"v\"} "));
+        try testing.expect(std.mem.startsWith(u8, lines[4 + bucket_count], "h_count{k=\"v\"} "));
+        try testing.expectEqual(
+            total,
+            try std.fmt.parseInt(u64, lineValue(lines[4 + bucket_count]), 10),
+        );
+    }
+}
 
 /// Everything after the last space: the value on a sample line.
 fn lineValue(line: []const u8) []const u8 {
@@ -359,195 +336,4 @@ fn lineLe(line: []const u8) ![]const u8 {
     const start = (std.mem.find(u8, line, "le=\"") orelse return error.NoLe) + 4;
     const end = (std.mem.findScalar(u8, line[start..], '"') orelse return error.NoLe) + start;
     return line[start..end];
-}
-
-// Property 5, through the runtime door because the limits are random: every
-// histogram document keeps the invariants the format needs.
-test "property: a histogram document keeps every bucket invariant" {
-    var prng: std.Random.DefaultPrng = .init(testing.random_seed);
-    const random = prng.random();
-
-    var limits: [8]f64 = undefined;
-    var counts: [8]u64 = undefined;
-    var round: usize = 0;
-    while (round < 2000) : (round += 1) {
-        const bucket_count = random.intRangeAtMost(usize, 0, 8);
-        var previous: f64 = 0;
-        var cumulative: u64 = 0;
-        for (0..bucket_count) |i| {
-            // `+ 1` makes every step real, so the limits stay strictly ascending.
-            previous += random.float(f64) * 100 + 1;
-            cumulative += random.intRangeAtMost(u64, 0, 5);
-            limits[i] = previous;
-            counts[i] = cumulative;
-        }
-        // A tail above the top limit is legal and lands only in `+Inf`.
-        const tail = random.intRangeAtMost(u64, 0, 3);
-        const buckets = [1]HistogramSample{.{
-            .labels = .{ .k = "v" },
-            .counts = counts[0..bucket_count],
-            .sum = random.float(f64) * 1000,
-            .count = cumulative + tail,
-        }};
-        const f = Family{
-            .name = "h",
-            .kind = .histogram,
-            .limits = limits[0..bucket_count],
-        };
-
-        var buffer: [document_size]u8 = undefined;
-        var w: Io.Writer = .fixed(&buffer);
-        try prometheus.runtime.histogramFamily(&w, f, &buckets);
-
-        var lines: [32][]const u8 = undefined;
-        var line_count: usize = 0;
-        var split = std.mem.splitScalar(u8, w.buffered(), '\n');
-        while (split.next()) |line| {
-            if (line.len == 0) continue;
-            lines[line_count] = line;
-            line_count += 1;
-        }
-
-        // One TYPE line, one bucket line per limit, the implicit +Inf bucket,
-        // then sum and count, and nothing else.
-        try testing.expectEqualStrings("# TYPE h histogram", lines[0]);
-        try testing.expectEqual(bucket_count + 4, line_count);
-
-        for (0..bucket_count) |i| {
-            const line = lines[1 + i];
-            try testing.expect(std.mem.startsWith(u8, line, "h_bucket{k=\"v\",le=\""));
-            try testing.expectEqual(limits[i], try std.fmt.parseFloat(f64, try lineLe(line)));
-            try testing.expectEqual(counts[i], try std.fmt.parseInt(u64, lineValue(line), 10));
-        }
-
-        const inf_line = lines[1 + bucket_count];
-        try testing.expect(std.mem.startsWith(u8, inf_line, "h_bucket{k=\"v\",le=\"+Inf\"} "));
-        const total = cumulative + tail;
-        try testing.expectEqual(total, try std.fmt.parseInt(u64, lineValue(inf_line), 10));
-
-        try testing.expect(std.mem.startsWith(u8, lines[2 + bucket_count], "h_sum{k=\"v\"} "));
-        try testing.expectEqual(
-            buckets[0].sum,
-            try std.fmt.parseFloat(f64, lineValue(lines[2 + bucket_count])),
-        );
-
-        try testing.expect(std.mem.startsWith(u8, lines[3 + bucket_count], "h_count{k=\"v\"} "));
-        try testing.expectEqual(
-            total,
-            try std.fmt.parseInt(u64, lineValue(lines[3 + bucket_count]), 10),
-        );
-    }
-}
-
-// -- Iterators -------------------------------------------------------------
-
-const KV = struct { labels: struct { k: []const u8 }, value: u64 };
-
-const kv_list = [_]KV{
-    .{ .labels = .{ .k = "a" }, .value = 1 },
-    .{ .labels = .{ .k = "b" }, .value = 2 },
-};
-
-const KVIter = struct {
-    items: []const KV,
-    index: usize = 0,
-
-    pub fn next(self: *KVIter) ?KV {
-        if (self.index >= self.items.len) return null;
-        defer self.index += 1;
-        return self.items[self.index];
-    }
-};
-
-test "an iterator and a slice render the same bytes through both doors" {
-    const f = Family{ .name = "iter_total", .kind = .counter };
-
-    var slice_buffer: [document_size]u8 = undefined;
-    var slice_writer: Io.Writer = .fixed(&slice_buffer);
-    try prometheus.family(&slice_writer, f, &kv_list);
-    try testing.expectEqualStrings(
-        \\# TYPE iter_total counter
-        \\iter_total{k="a"} 1
-        \\iter_total{k="b"} 2
-        \\
-    , slice_writer.buffered());
-
-    var by_pointer = KVIter{ .items = &kv_list };
-    var iter_buffer: [document_size]u8 = undefined;
-    var iter_writer: Io.Writer = .fixed(&iter_buffer);
-    try prometheus.family(&iter_writer, f, &by_pointer);
-    try testing.expectEqualStrings(slice_writer.buffered(), iter_writer.buffered());
-
-    var runtime_iter = KVIter{ .items = &kv_list };
-    var runtime_buffer: [document_size]u8 = undefined;
-    var runtime_writer: Io.Writer = .fixed(&runtime_buffer);
-    try prometheus.runtime.family(&runtime_writer, f, &runtime_iter);
-    try testing.expectEqualStrings(slice_writer.buffered(), runtime_writer.buffered());
-
-    // By value: the call takes a copy and advances that.
-    var value_buffer: [document_size]u8 = undefined;
-    var value_writer: Io.Writer = .fixed(&value_buffer);
-    try prometheus.family(&value_writer, f, KVIter{ .items = &kv_list });
-    try testing.expectEqualStrings(slice_writer.buffered(), value_writer.buffered());
-}
-
-test "an empty iterator writes the header alone" {
-    var empty = KVIter{ .items = &[_]KV{} };
-    var buffer: [document_size]u8 = undefined;
-    var w: Io.Writer = .fixed(&buffer);
-    try prometheus.family(&w, .{ .name = "iter_total", .kind = .counter }, &empty);
-    try testing.expectEqualStrings("# TYPE iter_total counter\n", w.buffered());
-}
-
-test "a one-element tuple still works" {
-    const one = .{KV{ .labels = .{ .k = "a" }, .value = 1 }};
-    var buffer: [document_size]u8 = undefined;
-    var w: Io.Writer = .fixed(&buffer);
-    try prometheus.family(&w, .{ .name = "iter_total", .kind = .counter }, &one);
-    try testing.expectEqualStrings(
-        \\# TYPE iter_total counter
-        \\iter_total{k="a"} 1
-        \\
-    , w.buffered());
-}
-
-const HistogramIter = struct {
-    items: []const HistogramSample,
-    index: usize = 0,
-
-    pub fn next(self: *HistogramIter) ?HistogramSample {
-        if (self.index >= self.items.len) return null;
-        defer self.index += 1;
-        return self.items[self.index];
-    }
-};
-
-test "a histogram iterator renders the same bytes as a slice" {
-    const f = Family{
-        .name = "latency_seconds",
-        .kind = .histogram,
-        .limits = &.{ 10, 20 },
-    };
-    const samples = [_]HistogramSample{.{
-        .labels = .{ .k = "v" },
-        .counts = &[_]u64{ 1, 2 },
-        .sum = 45,
-        .count = 3,
-    }};
-
-    var slice_buffer: [document_size]u8 = undefined;
-    var slice_writer: Io.Writer = .fixed(&slice_buffer);
-    try prometheus.histogramFamily(&slice_writer, f, &samples);
-
-    var by_pointer = HistogramIter{ .items = &samples };
-    var iter_buffer: [document_size]u8 = undefined;
-    var iter_writer: Io.Writer = .fixed(&iter_buffer);
-    try prometheus.histogramFamily(&iter_writer, f, &by_pointer);
-    try testing.expectEqualStrings(slice_writer.buffered(), iter_writer.buffered());
-
-    var runtime_iter = HistogramIter{ .items = &samples };
-    var runtime_buffer: [document_size]u8 = undefined;
-    var runtime_writer: Io.Writer = .fixed(&runtime_buffer);
-    try prometheus.runtime.histogramFamily(&runtime_writer, f, &runtime_iter);
-    try testing.expectEqualStrings(slice_writer.buffered(), runtime_writer.buffered());
 }

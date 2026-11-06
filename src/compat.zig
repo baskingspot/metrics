@@ -45,3 +45,10 @@ pub fn isIterator(comptime T: type) bool {
     if (!@hasDecl(Child, "next")) return false;
     return std.meta.activeTag(@typeInfo(@TypeOf(Child.next))) == .@"fn";
 }
+
+pub fn FieldType(comptime T: type, comptime index: usize) type {
+    if (@hasField(std.builtin.Type.Struct, "field_names")) {
+        return @typeInfo(T).@"struct".field_types[index];
+    }
+    return @typeInfo(T).@"struct".fields[index].type;
+}

@@ -4,12 +4,11 @@
 const std = @import("std");
 const prometheus = @import("prometheus");
 
-const BadLabels = struct { @"not-a-label": u8 };
+const Labels = struct { @"not-a-label": u8 };
 
 test "a label name outside the grammar does not compile" {
     var buffer: [256]u8 = undefined;
-    var w: std.Io.Writer = .fixed(&buffer);
-    try prometheus.family(&w, .{ .name = "ok", .kind = .counter }, &.{
-        .{ .labels = BadLabels{ .@"not-a-label" = 1 }, .value = 1 },
-    });
+    var out: std.Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
+    try prometheus.writeMetric(&w, "ok", Labels{ .@"not-a-label" = 1 }, 1);
 }
