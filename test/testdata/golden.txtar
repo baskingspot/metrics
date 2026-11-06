@@ -105,6 +105,24 @@ latency_seconds_bucket{le="30"} 30
 latency_seconds_bucket{le="+Inf"} 30
 latency_seconds_sum 465
 latency_seconds_count 30
+-- histogram_two_series.expected --
+# HELP message_size
+# TYPE message_size histogram
+message_size_bucket{direction="inbound",le="1024"} 1
+message_size_bucket{direction="inbound",le="+Inf"} 1
+message_size_sum{direction="inbound"} 1024
+message_size_count{direction="inbound"} 1
+message_size_bucket{direction="outbound",le="1024"} 0
+message_size_bucket{direction="outbound",le="+Inf"} 2
+message_size_sum{direction="outbound"} 3072
+message_size_count{direction="outbound"} 2
+-- histogram_integer_sum.expected --
+# HELP message_size
+# TYPE message_size histogram
+message_size_bucket{le="1024"} 3
+message_size_bucket{le="+Inf"} 3
+message_size_sum 9007199254740993
+message_size_count 3
 -- values.expected --
 # HELP values
 # TYPE values untyped

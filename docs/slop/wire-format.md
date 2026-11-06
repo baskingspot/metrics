@@ -7,9 +7,9 @@ the way it does. The scope is `research/prometheus-scope.md` in
 
 ## The shape
 
-A cursor, not a model. `writeMetric` writes one line; `writeFamily` writes
+A cursor, not a model. `Writer.writeMetric` writes one line; `Writer.writeFamily` writes
 `# HELP` and `# TYPE` and returns a handle whose `write` is `writeMetric` under
-that name; `writeHistogram` writes a classic histogram. Ordering, family
+that name; `Writer.writeHistogram` writes a classic histogram. Ordering, family
 uniqueness, and whether a family has help are the caller's.
 
 That is Matt's call of 2026-11-06, after three earlier shapes were built and

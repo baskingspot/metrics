@@ -132,7 +132,7 @@ fn emit_family(
         if (shape == si) {
             inline for (values, 0..) |Value, vi| {
                 if (value_kind == vi) {
-                    const handle = try prometheus.writeFamily(w, family);
+                    const handle = try w.writeFamily(family);
                     const samples = try arena.alloc(Sample(Labels, Value), random.intRangeAtMost(usize, 0, 4));
                     for (samples) |*sample| {
                         sample.* = .{
@@ -173,8 +173,7 @@ fn emit_histogram(
     const shape = random.uintLessThan(usize, shapes.len);
     inline for (shapes, 0..) |Labels, si| {
         if (shape == si) {
-            try prometheus.writeHistogram(
-                w,
+            try w.writeHistogram(
                 family,
                 try labels_of(Labels, arena, random),
                 limits[0..bucket_count],

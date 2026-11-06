@@ -13,40 +13,18 @@ const std = @import("std");
 const Io = std.Io;
 const assert = std.debug.assert;
 const findAny = std.mem.findAny;
-const utf8ValidateSlice = std.unicode.utf8ValidateSlice;
 
+/// The value must be valid UTF-8. The writer does not check: a check here
+/// turns a crafted value into a debug abort, which is worse than the poisoned
+/// document it replaces because it is not survivable, and policy about a
+/// caller's data does not belong in the writer. Validate at the boundary that
+/// accepts the data.
 pub fn writeLabelValue(w: *Io.Writer, value: []const u8) Io.Writer.Error!void {
-    assert(utf8ValidateSlice(value));
     try writeEscaped(w, value, label_specials);
 }
 
 pub fn writeHelpText(w: *Io.Writer, value: []const u8) Io.Writer.Error!void {
-    assert(utf8ValidateSlice(value));
     try writeEscaped(w, value, help_specials);
-}
-
-/// The escaped form of HELP text, built at comptime for a comptime family.
-///
-/// The comptime door writes its whole `# HELP`/`# TYPE` block as one literal,
-/// so it needs the escaped bytes as a value rather than as a write.
-pub fn escapeHelp(comptime text: []const u8) []const u8 {
-    comptime {
-        // The `++` loop costs branches per byte against the default quota,
-        // which ran out at about 2 KB of HELP.
-        @setEvalBranchQuota(1000 + text.len * 1000);
-        if (!utf8ValidateSlice(text)) {
-            @compileError("prometheus: HELP text is not valid UTF-8");
-        }
-        var out: []const u8 = "";
-        for (text) |c| {
-            out = out ++ switch (c) {
-                '\\' => "\\\\",
-                '\n' => "\\n",
-                else => &[_]u8{c},
-            };
-        }
-        return out;
-    }
 }
 
 /// The bytes that need escaping in a label value, in HELP text, and nothing
@@ -109,9 +87,10 @@ test "empty HELP writes nothing" {
     try testing.expectEqualStrings("", w.buffered());
 }
 
-test "valid UTF-8 is asserted, not returned" {
-    // The assertion is the contract: an invalid byte is a caller bug caught in
-    // a debug build, not an error to thread through every write.
+test "the writer passes bytes through without validating them" {
+    // The contract is that the caller supplies valid UTF-8; the writer's job is
+    // bytes with three of them escaped, and a check here would be a debug abort
+    // on a caller's data.
     var buffer: [64]u8 = undefined;
     var w: Io.Writer = .fixed(&buffer);
     try writeLabelValue(&w, "ok 🦎");
