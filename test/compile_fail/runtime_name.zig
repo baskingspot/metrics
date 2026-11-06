@@ -6,7 +6,8 @@ const prometheus = @import("prometheus");
 
 test "a name that is not comptime-known does not compile" {
     var buffer: [256]u8 = undefined;
-    var w: std.Io.Writer = .fixed(&buffer);
+    var out: std.Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
 
     var name: []const u8 = "acme_requests_total";
     _ = &name;

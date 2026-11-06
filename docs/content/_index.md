@@ -20,6 +20,7 @@ order, and whether a family has help text are the caller's business.
 - [Families](#families): `writeFamily` writes the header and returns the handle its samples go through.
 - [Histograms](#histograms): `writeHistogram` takes the caller's limits and cumulative counts and writes `_bucket`, `_sum`, and `_count`.
 - [Values and escaping](#values-and-escaping): a float that reads back as an integer is written as one, and the three bytes that need escaping are escaped.
+- [The primitives](#the-primitives): `Writer` writes one record at a time, and every composition above it is built from those methods.
 
 The [API reference](api/) documents every public symbol.
 
@@ -57,8 +58,12 @@ buffer holds the document with no allocation:
 
 ```zig
 var buffer: [4096]u8 = undefined;
-var w: std.Io.Writer = .fixed(&buffer);
+var out: std.Io.Writer = .fixed(&buffer);
+var w = prometheus.Writer.init(&out);
 ```
+
+`Writer` is the whole interface above the sink: it holds the `*std.Io.Writer`
+and nothing else.
 
 `std.Io.Writer.Allocating` grows a body you will own, and `std.Io.File.Writer`
 writes to a file or a socket. The library never sees either.
@@ -180,6 +185,29 @@ Invalid UTF-8 is not an error here. It is `std.debug.assert` in the writer,
 because a label value that comes from outside the program is a bug to catch in
 development, not a condition to thread through every call site in a release
 build. A caller that takes user input checks it before it gets here.
+
+# The primitives
+
+`Writer` writes one expfmt record per call and knows nothing else:
+
+- `help(name, text)` writes `# HELP`, with the text escaped.
+- `kind(name, k)` writes `# TYPE`.
+- `name(name, labels)` writes `name{label="value",...}` and no trailing space. The labels are a struct, or a tuple of structs written in order.
+- `value(v)` writes a space, the value, and the newline.
+- `line(bytes)` writes bytes you formatted yourself.
+
+Every composition on this page is built from those five, and a test holds it to
+that: the first `_bucket` line `writeHistogram` writes must equal the same line
+written by hand with `name` and `value`. A caller that needs a shape this
+library does not have, such as a summary or an exemplar, writes it from the
+primitives and gets the same values and escaping.
+
+```zig
+var out: std.Io.Writer = .fixed(&buffer);
+var w = prometheus.Writer.init(&out);
+try w.name("custom_total", .{ .kind = "custom" });
+try w.value(@as(u64, 7));
+```
 
 # Limits
 

@@ -3,7 +3,8 @@ const prometheus = @import("prometheus");
 
 test "a histogram family from the caller's cumulative counts" {
     var buffer: [4096]u8 = undefined;
-    var w: std.Io.Writer = .fixed(&buffer);
+    var out: std.Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
 
     try prometheus.writeHistogram(&w, .{
         .name = "request_latency_seconds",
@@ -20,5 +21,5 @@ test "a histogram family from the caller's cumulative counts" {
         \\request_latency_seconds_sum{method="GET"} 3.5
         \\request_latency_seconds_count{method="GET"} 40
         \\
-    , w.buffered());
+    , out.buffered());
 }

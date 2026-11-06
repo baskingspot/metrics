@@ -101,7 +101,8 @@ pub fn main(init: std.process.Init) !void {
 }
 
 fn document(arena: Allocator, random: std.Random) ![]const u8 {
-    var w: Io.Writer = .fixed(try arena.alloc(u8, document_capacity));
+    var out: Io.Writer = .fixed(try arena.alloc(u8, document_capacity));
+    var w = prometheus.Writer.init(&out);
     if (random.boolean()) {
         // Each catalog entry goes out at most once per document, so no name
         // repeats and no second HELP line appears.
@@ -113,14 +114,14 @@ fn document(arena: Allocator, random: std.Random) ![]const u8 {
             if (random.boolean()) try emit_histogram(&w, family, arena, random);
         }
     }
-    return w.buffered();
+    return out.buffered();
 }
 
 const shapes = [_]type{ NoLabels, OneLabel, TwoLabels, ThreeLabels, JobInstance, PathStatus };
 const values = [_]type{ u64, i64, f64 };
 
 fn emit_family(
-    w: *Io.Writer,
+    w: *prometheus.Writer,
     comptime family: Metric,
     arena: Allocator,
     random: std.Random,
@@ -147,7 +148,7 @@ fn emit_family(
 }
 
 fn emit_histogram(
-    w: *Io.Writer,
+    w: *prometheus.Writer,
     comptime family: Metric,
     arena: Allocator,
     random: std.Random,

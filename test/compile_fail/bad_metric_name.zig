@@ -6,6 +6,7 @@ const prometheus = @import("prometheus");
 
 test "a metric name that starts with a digit does not compile" {
     var buffer: [256]u8 = undefined;
-    var w: std.Io.Writer = .fixed(&buffer);
+    var out: std.Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
     try prometheus.writeMetric(&w, "1_requests", .{}, 1);
 }

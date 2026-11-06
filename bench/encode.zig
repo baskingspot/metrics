@@ -74,27 +74,29 @@ fn benchmarkEscape(b: *testingx.B) !void {
 /// the bytes of exposition it produces.
 fn run(b: *testingx.B, labels: anytype) !void {
     var buffer: [64 * 1024]u8 = undefined;
-    var w: Io.Writer = .fixed(&buffer);
+    var out: Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
 
     while (try b.loop()) {
-        w.end = 0;
+        out.end = 0;
         const family = try prometheus.writeFamily(&w, .{
             .name = "bench_requests_total",
             .kind = .counter,
             .help = "Benchmark counter.",
         });
         try family.write(labels, 1841);
-        b.keepAlive(w.buffered());
+        b.keepAlive(out.buffered());
     }
-    b.setBytes(@intCast(w.buffered().len));
+    b.setBytes(@intCast(out.buffered().len));
 }
 
 fn benchmarkHistogram(b: *testingx.B) !void {
     var buffer: [64 * 1024]u8 = undefined;
-    var w: Io.Writer = .fixed(&buffer);
+    var out: Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
 
     while (try b.loop()) {
-        w.end = 0;
+        out.end = 0;
         try prometheus.writeHistogram(
             &w,
             histogram_metric,
@@ -104,7 +106,7 @@ fn benchmarkHistogram(b: *testingx.B) !void {
             4.5,
             40,
         );
-        b.keepAlive(w.buffered());
+        b.keepAlive(out.buffered());
     }
-    b.setBytes(@intCast(w.buffered().len));
+    b.setBytes(@intCast(out.buffered().len));
 }

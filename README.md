@@ -15,7 +15,8 @@ escaping around them, to any `std.Io.Writer`.
 
 ```zig
 var buffer: [4096]u8 = undefined;
-var w: std.Io.Writer = .fixed(&buffer);
+var out: std.Io.Writer = .fixed(&buffer);
+var w = prometheus.Writer.init(&out);
 
 const requests = try prometheus.writeFamily(&w, .{
     .name = "http_requests_total",
@@ -27,7 +28,9 @@ try requests.write(.{ .method = "POST", .status = "500" }, 3);
 ```
 
 It is a cursor, not a registry. Which families appear, in what order, and
-whether a family has help text are the caller's business.
+whether a family has help text are the caller's business, and the primitives
+underneath (`Writer.help`, `kind`, `name`, `value`, `line`) are public so a
+caller can compose a shape this library does not have.
 
 The API is pre-1.0: pin the commit, and expect it to move.
 
@@ -37,6 +40,7 @@ The API is pre-1.0: pin the commit, and expect it to move.
 - [Families](https://baskingspot.dev/prometheus/#families): `writeFamily` writes `# HELP` and `# TYPE` and returns the handle its samples go through.
 - [Histograms](https://baskingspot.dev/prometheus/#histograms): `writeHistogram` takes the caller's limits and cumulative counts and writes `_bucket`, `_sum`, and `_count`, `le` included.
 - [Values and escaping](https://baskingspot.dev/prometheus/#values-and-escaping): a float that reads back as an integer is written as one, and the three bytes that need escaping are escaped.
+- [The primitives](https://baskingspot.dev/prometheus/#the-primitives): `Writer` writes one record at a time, and every composition above it is built from those methods.
 
 Not implemented:
 

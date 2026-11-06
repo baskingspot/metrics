@@ -8,6 +8,7 @@ const Labels = struct { le: u8 };
 
 test "a histogram label set cannot carry le" {
     var buffer: [256]u8 = undefined;
-    var w: std.Io.Writer = .fixed(&buffer);
+    var out: std.Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
     try prometheus.writeHistogram(&w, .{ .name = "x", .kind = .histogram }, Labels{ .le = 1 }, &.{}, &[_]u64{}, 0, 0);
 }

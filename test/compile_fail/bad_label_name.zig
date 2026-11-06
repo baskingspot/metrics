@@ -8,6 +8,7 @@ const Labels = struct { @"not-a-label": u8 };
 
 test "a label name outside the grammar does not compile" {
     var buffer: [256]u8 = undefined;
-    var w: std.Io.Writer = .fixed(&buffer);
+    var out: std.Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
     try prometheus.writeMetric(&w, "ok", Labels{ .@"not-a-label" = 1 }, 1);
 }

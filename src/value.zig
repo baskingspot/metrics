@@ -155,6 +155,21 @@ test "everything else is Go's 'g' with the shortest digits" {
     try expectValue("9.223372036854776e+18", 9223372036854775808.0);
 }
 
+test "a value outside the integer range falls through instead of trapping" {
+    // `@intFromFloat` is UB in ReleaseFast and a panic in Debug on a value that
+    // does not fit, so the range is checked before the cast, not after.
+    try expectValue("1e+300", 1e300);
+    try expectValue("-1e+300", -1e300);
+    // 2^63 is the first value an i64 cannot hold, and the next float past it is
+    // further out still.
+    const first_out_of_range: f64 = 9223372036854775808.0;
+    try expectValue("9.223372036854776e+18", first_out_of_range);
+    try expectValue("9.223372036854778e+18", @bitCast(@as(u64, @bitCast(first_out_of_range)) + 1));
+    // The most negative i64 is representable and is written as an integer.
+    try expectValue("-9223372036854775808", -9223372036854775808.0);
+    try expectValue("9223372036854774784", 9223372036854774784.0);
+}
+
 test "the non-finite spellings are canonical" {
     try expectValue("NaN", math.nan(f64));
     try expectValue("+Inf", math.inf(f64));

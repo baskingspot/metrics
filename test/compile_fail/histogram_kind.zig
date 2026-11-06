@@ -7,6 +7,7 @@ const prometheus = @import("prometheus");
 
 test "writeHistogram rejects a counter metric" {
     var buffer: [256]u8 = undefined;
-    var w: std.Io.Writer = .fixed(&buffer);
+    var out: std.Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
     try prometheus.writeHistogram(&w, .{ .name = "requests_total", .kind = .counter }, .{}, &.{}, &[_]u64{}, 0, 0);
 }

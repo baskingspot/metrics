@@ -3,7 +3,8 @@ const prometheus = @import("prometheus");
 
 test "one family: the header, then its samples" {
     var buffer: [4096]u8 = undefined;
-    var w: std.Io.Writer = .fixed(&buffer);
+    var out: std.Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
 
     const requests = try prometheus.writeFamily(&w, .{
         .name = "http_requests_total",
@@ -19,5 +20,5 @@ test "one family: the header, then its samples" {
         \\http_requests_total{method="GET",status="200"} 1841
         \\http_requests_total{method="POST",status="500"} 3
         \\
-    , w.buffered());
+    , out.buffered());
 }

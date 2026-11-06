@@ -19,14 +19,15 @@ The justfile is the command interface: `just test`, `just lint`, `just ci`. Run 
 - Commit messages are one line, `area: summary`, and every commit is signed. Do not rewrite pushed history.
 - Gate commands on their exit codes, and claim only what you ran. A run on one compiler says nothing about the other.
 - Format with `zig fmt` and lint with `ziglint`. `just fmt` and `just lint` run both.
-- The writer's only sink is `*std.Io.Writer`. There is no HTTP, allocator, clock, thread, or `var` in the library, and the only error is the sink's.
-- The shape is a cursor, not a model: `writeMetric`, `writeFamily` plus its handle, and `writeHistogram`. Ordering, family uniqueness, and help-or-no-help are the caller's. Do not add a registry, a document type, or validation of a caller's counters.
-- Names are comptime: `writeMetric` and `writeFamily` take the metric name as a comptime parameter, which is what makes a bad name a compile error. Label names come from struct field names and are checked the same way.
+- Two layers, and the dependency only goes one way: `writer.zig` holds the expfmt cursor (`help`, `kind`, `name`, `value`, `line`) and imports nothing from `compose.zig`; `compose.zig` holds `writeMetric`, `writeFamily`, and `writeHistogram` and may only write through `Writer` methods. The test `the composition is the primitives, byte for byte` is what enforces it.
+- No HTTP, allocator, clock, thread, or `var` in the library. The only error is the sink's.
+- Ordering, family uniqueness, and help-or-no-help are the caller's. Do not add a registry, a document type, or a sample sequence.
+- Names are comptime, which is what makes a bad name a compile error. Label names come from struct field names and are checked the same way.
 - Invalid UTF-8 in a label value is `std.debug.assert`, not an error. Do not turn it into one without settling it with Matt.
 - `testingx` supplies the test runner, the fixtures, and the benchmark harness. It is lazy and referenced only after `if (b.pkg_hash.len != 0) return;`, so a consumer fetches nothing but the module. Do not move the early return below it.
 - The test fixtures are synthetic. Do not paste metric names, help text, or label sets from a production service.
-- The oracle is `prom2json`, from the flake. `just check-golden` pipes every golden document through it and `just check-corpus N SEED` renders N seeded random documents and fails on the first rejection, keeping the txtar archive for replay. It checks syntax, escaping, names, UTF-8, and the trailing newline; it does not check series identity, family ordering, or any histogram invariant, so the unit tests carry those.
-- A compile-fail case is a file in `test/compile_fail/` plus an `.expect` holding the message it must fail with. `just check-compile-fail` runs them and fails if one compiles or fails for the wrong reason. Golden documents live in `test/testdata/golden.txtar` and are read at compile time; `just check-golden` splits the archive and pipes every document through `prom2json`, so the oracle sees the integer values and the escaping on both lanes.
+- The oracle is `prom2json`, from the flake. `just check-golden` pipes every golden document through it and `just check-corpus N SEED` renders N seeded random documents and fails on the first rejection, keeping the txtar archive for replay.
+- A compile-fail case is a file in `test/compile_fail/` plus an `.expect` holding the message it must fail with. `just check-compile-fail` runs them and fails if one compiles or fails for the wrong reason.
 - This repo's GitHub settings come from `baskingspot/.github`, with `just settings`. Do not change them by hand.
 - To graduate the project, follow the `baskingspot-new-repo` skill: logos, a real README, and the audit passing.
 

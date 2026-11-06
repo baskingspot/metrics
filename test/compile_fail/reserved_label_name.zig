@@ -6,6 +6,7 @@ const prometheus = @import("prometheus");
 
 test "a label name in the reserved namespace does not compile" {
     var buffer: [256]u8 = undefined;
-    var w: std.Io.Writer = .fixed(&buffer);
+    var out: std.Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
     try prometheus.writeMetric(&w, "jobs_total", .{ .__name__ = "other" }, 1);
 }
