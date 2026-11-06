@@ -6,7 +6,7 @@ test "one family: the header, then its samples" {
     var out: std.Io.Writer = .fixed(&buffer);
     var w = prometheus.Writer.init(&out);
 
-    const requests = try prometheus.writeFamily(&w, .{
+    const requests = try w.writeFamily(.{
         .name = "http_requests_total",
         .kind = .counter,
         .help = "Requests served, by method and status.",

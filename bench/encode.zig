@@ -79,7 +79,7 @@ fn run(b: *testingx.B, labels: anytype) !void {
 
     while (try b.loop()) {
         out.end = 0;
-        const family = try prometheus.writeFamily(&w, .{
+        const family = try w.writeFamily(.{
             .name = "bench_requests_total",
             .kind = .counter,
             .help = "Benchmark counter.",
@@ -97,8 +97,7 @@ fn benchmarkHistogram(b: *testingx.B) !void {
 
     while (try b.loop()) {
         out.end = 0;
-        try prometheus.writeHistogram(
-            &w,
+        try w.writeHistogram(
             histogram_metric,
             .{ .method = "GET", .code = 200 },
             &histogram_limits,

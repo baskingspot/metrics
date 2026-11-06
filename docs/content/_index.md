@@ -11,14 +11,14 @@ and 301 characters for `1e300`. This package owns those two rules and the
 escaping around them. It writes to any `std.Io.Writer`, so a buffer, a file,
 and a socket are the caller's problem.
 
-It is a cursor, not a registry. `writeMetric` writes one line, `writeFamily`
+It is a cursor, not a registry. `Writer.writeMetric` writes one line, `writeFamily`
 writes `# HELP` and `# TYPE` and hands back a writer for that family's samples,
-and `writeHistogram` writes a classic histogram. Which families appear, in what
+and `Writer.writeHistogram` writes a classic histogram. Which families appear, in what
 order, and whether a family has help text are the caller's business.
 
-- [Samples](#samples): `writeMetric` writes one line, and labels come from a struct's field names, so an illegal label name does not compile.
-- [Families](#families): `writeFamily` writes the header and returns the handle its samples go through.
-- [Histograms](#histograms): `writeHistogram` takes the caller's limits and cumulative counts and writes `_bucket`, `_sum`, and `_count`.
+- [Samples](#samples): `Writer.writeMetric` writes one line, and labels come from a struct's field names, so an illegal label name does not compile.
+- [Families](#families): `Writer.writeFamily` writes the header and returns the handle its samples go through.
+- [Histograms](#histograms): `Writer.writeHistogram` takes the caller's limits and cumulative counts and writes `_bucket`, `_sum`, and `_count`.
 - [Values and escaping](#values-and-escaping): a float that reads back as an integer is written as one, and the three bytes that need escaping are escaped.
 - [The primitives](#the-primitives): `Writer` writes one record at a time, and every composition above it is built from those methods.
 
@@ -82,7 +82,7 @@ build.
 
 ## One line
 
-`writeMetric` writes a name, its labels, a value, and a newline.
+`Writer.writeMetric` writes a name, its labels, a value, and a newline.
 
 ```zig
 {{ load_data(path = "examples/sinks.zig", format = "plain") | trim_end }}
@@ -108,7 +108,7 @@ a field written as `@"not-a-label"` or `.__name__` does not compile.
 
 ## The header, then the samples
 
-`writeFamily` writes `# HELP` and `# TYPE` and returns a handle. Its `write`
+`Writer.writeFamily` writes `# HELP` and `# TYPE` and returns a handle. Its `write`
 method is `writeMetric` with the family's name, so a sample line cannot be
 written under another name by accident.
 
@@ -132,7 +132,7 @@ enforce a document shape.
 
 ## Cumulative counts, written as buckets
 
-`writeHistogram` writes the header, then one `_bucket` line per limit, the
+`Writer.writeHistogram` writes the header, then one `_bucket` line per limit, the
 implicit `+Inf` bucket, `_sum`, and `_count`. The counts are cumulative:
 `counts[i]` is the number of observations at or below `limits[i]`. The last
 finite count is at most the total, because an observation above the top limit
@@ -146,13 +146,13 @@ An empty `limits` slice writes one `+Inf` bucket, `_sum`, and `_count`.
 
 ## More than one series
 
-`writeHistogram` writes the header and one series, so a family with two label
+`Writer.writeHistogram` writes the header and one series, so a family with two label
 sets cannot call it twice: the second call writes `# HELP` and `# TYPE` again
-and the parser rejects the document. Write the header once with `writeFamily`
+and the parser rejects the document. Write the header once with `w.writeFamily`
 and loop the series form.
 
 ```zig
-const family = try prometheus.writeFamily(&w, .{ .name = "message_size", .kind = .histogram });
+const family = try w.writeFamily(.{ .name = "message_size", .kind = .histogram });
 try family.writeHistogramSeries(.{ .direction = "inbound" }, &.{1024}, &[_]u64{1}, 1024, 1);
 try family.writeHistogramSeries(.{ .direction = "outbound" }, &.{1024}, &[_]u64{0}, 3072, 2);
 ```
@@ -215,7 +215,7 @@ answer with whatever your boundary answers for a bad request.
 - `line(bytes)` writes bytes you formatted yourself.
 
 Every composition on this page is built from those five, and a test holds it to
-that: the first `_bucket` line `writeHistogram` writes must equal the same line
+that: the first `_bucket` line `Writer.writeHistogram` writes must equal the same line
 written by hand with `name` and `value`. A caller that needs a shape this
 library does not have, such as a summary or an exemplar, writes it from the
 primitives and gets the same values and escaping.

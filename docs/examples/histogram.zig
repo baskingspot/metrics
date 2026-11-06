@@ -6,7 +6,7 @@ test "a histogram family from the caller's cumulative counts" {
     var out: std.Io.Writer = .fixed(&buffer);
     var w = prometheus.Writer.init(&out);
 
-    try prometheus.writeHistogram(&w, .{
+    try w.writeHistogram(.{
         .name = "request_latency_seconds",
         .kind = .histogram,
         .help = "Request latency.",

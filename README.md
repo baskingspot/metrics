@@ -18,7 +18,7 @@ var buffer: [4096]u8 = undefined;
 var out: std.Io.Writer = .fixed(&buffer);
 var w = prometheus.Writer.init(&out);
 
-const requests = try prometheus.writeFamily(&w, .{
+const requests = try w.writeFamily(.{
     .name = "http_requests_total",
     .kind = .counter,
     .help = "Requests served, by method and status.",
@@ -36,9 +36,9 @@ The API is pre-1.0: pin the commit, and expect it to move.
 
 ## What is in it
 
-- [Samples](https://baskingspot.dev/prometheus/#samples): `writeMetric` writes one line, and labels come from a struct's field names, so an illegal label name does not compile.
-- [Families](https://baskingspot.dev/prometheus/#families): `writeFamily` writes `# HELP` and `# TYPE` and returns the handle its samples go through.
-- [Histograms](https://baskingspot.dev/prometheus/#histograms): `writeHistogram` takes the caller's limits and cumulative counts and writes `_bucket`, `_sum`, and `_count`, `le` included.
+- [Samples](https://baskingspot.dev/prometheus/#samples): `Writer.writeMetric` writes one line, and labels come from a struct's field names, so an illegal label name does not compile.
+- [Families](https://baskingspot.dev/prometheus/#families): `Writer.writeFamily` writes `# HELP` and `# TYPE` and returns the handle its samples go through.
+- [Histograms](https://baskingspot.dev/prometheus/#histograms): `Writer.writeHistogram` takes the caller's limits and cumulative counts and writes `_bucket`, `_sum`, and `_count`, `le` included.
 - [Values and escaping](https://baskingspot.dev/prometheus/#values-and-escaping): a float that reads back as an integer is written as one, and the three bytes that need escaping are escaped.
 - [The primitives](https://baskingspot.dev/prometheus/#the-primitives): `Writer` writes one record at a time, and every composition above it is built from those methods.
 

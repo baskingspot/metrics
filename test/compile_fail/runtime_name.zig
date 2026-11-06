@@ -11,5 +11,5 @@ test "a name that is not comptime-known does not compile" {
 
     var name: []const u8 = "acme_requests_total";
     _ = &name;
-    _ = try prometheus.writeFamily(&w, .{ .name = name, .kind = .counter });
+    _ = try w.writeFamily(.{ .name = name, .kind = .counter });
 }

@@ -6,7 +6,7 @@ test "a label value with a quote, a newline, and a backslash" {
     var out: std.Io.Writer = .fixed(&buffer);
     var w = prometheus.Writer.init(&out);
 
-    try prometheus.writeMetric(&w, "worker_log", .{
+    try w.writeMetric("worker_log", .{
         .message = "say \"hi\"\nthen\\leave",
     }, 1);
 

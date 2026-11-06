@@ -19,7 +19,7 @@ The justfile is the command interface: `just test`, `just lint`, `just ci`. Run 
 - Commit messages are one line, `area: summary`, and every commit is signed. Do not rewrite pushed history.
 - Gate commands on their exit codes, and claim only what you ran. A run on one compiler says nothing about the other.
 - Format with `zig fmt` and lint with `ziglint`. `just fmt` and `just lint` run both.
-- Two layers, and the dependency only goes one way: `writer.zig` holds the expfmt cursor (`help`, `kind`, `name`, `value`, `line`) and imports nothing from `compose.zig`; `compose.zig` holds `writeMetric`, `writeFamily`, and `writeHistogram` and may only write through `Writer` methods. The test `the composition is the primitives, byte for byte` is what enforces it.
+- Two layers in one file, because Zig cannot add a method from another: `src/writer.zig` has a primitives half (`help`, `kind`, `name`, `value`, `line`) and a compositions half (`writeMetric`, `writeFamily`, `writeHistogram`, `FamilyWriter.writeHistogramSeries`), separated by a doc comment. A composition may only write through the primitives, and the test `the composition is the primitives, byte for byte` is what enforces it.
 - No HTTP, allocator, clock, thread, or `var` in the library. The only error is the sink's.
 - Ordering, family uniqueness, and help-or-no-help are the caller's. Do not add a registry, a document type, or a sample sequence.
 - Names are comptime, which is what makes a bad name a compile error. Label names come from struct field names and are checked the same way.

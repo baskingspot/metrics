@@ -22,7 +22,7 @@ test "a labeled family" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
     var w = prometheus.Writer.init(&out);
-    const family = try prometheus.writeFamily(&w, .{
+    const family = try w.writeFamily(.{
         .name = "requests_total",
         .kind = .counter,
         .help = "Requests served, by method and status.",
@@ -36,7 +36,7 @@ test "an unlabeled family" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
     var w = prometheus.Writer.init(&out);
-    const family = try prometheus.writeFamily(&w, .{
+    const family = try w.writeFamily(.{
         .name = "up",
         .kind = .gauge,
         .help = "One per scrape.",
@@ -49,7 +49,7 @@ test "one line with no header" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
     var w = prometheus.Writer.init(&out);
-    try prometheus.writeMetric(&w, "up", .{}, 1);
+    try w.writeMetric("up", .{}, 1);
     try expect("line_only.expected", out.buffered());
 }
 
@@ -57,7 +57,7 @@ test "an integer label value" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
     var w = prometheus.Writer.init(&out);
-    const family = try prometheus.writeFamily(&w, .{
+    const family = try w.writeFamily(.{
         .name = "listener_port",
         .kind = .gauge,
     });
@@ -69,7 +69,7 @@ test "a label value escapes backslash quote and newline" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
     var w = prometheus.Writer.init(&out);
-    const family = try prometheus.writeFamily(&w, .{
+    const family = try w.writeFamily(.{
         .name = "worker_log",
         .kind = .counter,
     });
@@ -81,7 +81,7 @@ test "HELP escapes a backslash and a newline, not a quote" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
     var w = prometheus.Writer.init(&out);
-    const family = try prometheus.writeFamily(&w, .{
+    const family = try w.writeFamily(.{
         .name = "escaped",
         .kind = .gauge,
         .help = "a\\b\"c\nd",
@@ -94,7 +94,7 @@ test "an empty HELP writes the line without text" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
     var w = prometheus.Writer.init(&out);
-    const family = try prometheus.writeFamily(&w, .{ .name = "bare", .kind = .counter });
+    const family = try w.writeFamily(.{ .name = "bare", .kind = .counter });
     try family.write(.{}, 0);
     try expect("empty_help.expected", out.buffered());
 }
@@ -104,7 +104,7 @@ test "three families in one document" {
     var out: Io.Writer = .fixed(&buffer);
     var w = prometheus.Writer.init(&out);
 
-    const first = try prometheus.writeFamily(&w, .{
+    const first = try w.writeFamily(.{
         .name = "first_total",
         .kind = .counter,
         .help = "First family.",
@@ -112,10 +112,10 @@ test "three families in one document" {
     try first.write(.{ .k = "a" }, 1);
     try first.write(.{ .k = "b" }, 2);
 
-    const second = try prometheus.writeFamily(&w, .{ .name = "second", .kind = .gauge });
+    const second = try w.writeFamily(.{ .name = "second", .kind = .gauge });
     try second.write(.{}, 3);
 
-    const third = try prometheus.writeFamily(&w, .{ .name = "third_bytes", .kind = .untyped });
+    const third = try w.writeFamily(.{ .name = "third_bytes", .kind = .untyped });
     try third.write(.{}, 4);
 
     try expect("three_families.expected", out.buffered());
@@ -125,8 +125,7 @@ test "a histogram with one bucket" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
     var w = prometheus.Writer.init(&out);
-    try prometheus.writeHistogram(
-        &w,
+    try w.writeHistogram(
         .{ .name = "latency_seconds", .kind = .histogram },
         .{},
         &.{10},
@@ -141,8 +140,7 @@ test "a histogram with only the implicit bucket" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
     var w = prometheus.Writer.init(&out);
-    try prometheus.writeHistogram(
-        &w,
+    try w.writeHistogram(
         .{ .name = "latency_seconds", .kind = .histogram },
         .{},
         &.{},
@@ -159,8 +157,7 @@ test "a histogram with a tail above its top limit" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
     var w = prometheus.Writer.init(&out);
-    try prometheus.writeHistogram(
-        &w,
+    try w.writeHistogram(
         .{ .name = "latency_seconds", .kind = .histogram },
         .{},
         &.{ 10, 20 },
@@ -175,8 +172,7 @@ test "le uses the same formatter as a sample value" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
     var w = prometheus.Writer.init(&out);
-    try prometheus.writeHistogram(
-        &w,
+    try w.writeHistogram(
         .{ .name = "latency_seconds", .kind = .histogram },
         .{ .method = "GET" },
         &.{ 1e-7, 0.001, 1e6 },
@@ -203,8 +199,7 @@ test "a histogram with thirty limits" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
     var w = prometheus.Writer.init(&out);
-    try prometheus.writeHistogram(
-        &w,
+    try w.writeHistogram(
         .{ .name = "latency_seconds", .kind = .histogram },
         .{},
         &limits,
@@ -215,12 +210,24 @@ test "a histogram with thirty limits" {
     try expect("histogram_thirty.expected", out.buffered());
 }
 
+// The series form is what a multi-series family calls directly, so the
+// no-limits case has to hold there too: zero finite buckets, then the implicit
+// `+Inf` from the total, then `_sum` and `_count`.
+test "a series with no limits is one +Inf bucket" {
+    var buffer: [document_size]u8 = undefined;
+    var out: Io.Writer = .fixed(&buffer);
+    var w = prometheus.Writer.init(&out);
+    const family = try w.writeFamily(.{ .name = "latency_seconds", .kind = .histogram });
+    try family.writeHistogramSeries(.{}, &.{}, &[_]u64{}, 1.25, 7);
+    try expect("histogram_inf_only.expected", out.buffered());
+}
+
 test "a histogram family with two series writes one header" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
     var w = prometheus.Writer.init(&out);
 
-    const family = try prometheus.writeFamily(&w, .{
+    const family = try w.writeFamily(.{
         .name = "message_size",
         .kind = .histogram,
     });
@@ -236,8 +243,7 @@ test "a histogram sum wider than f64" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
     var w = prometheus.Writer.init(&out);
-    try prometheus.writeHistogram(
-        &w,
+    try w.writeHistogram(
         .{ .name = "message_size", .kind = .histogram },
         .{},
         &.{1024},
@@ -252,7 +258,7 @@ test "the value table" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
     var w = prometheus.Writer.init(&out);
-    const family = try prometheus.writeFamily(&w, .{ .name = "values", .kind = .untyped });
+    const family = try w.writeFamily(.{ .name = "values", .kind = .untyped });
     const cases = [_]struct { name: []const u8, value: f64 }{
         .{ .name = "one_tenth", .value = 0.1 },
         .{ .name = "ten_thousandth", .value = 0.0001 },
@@ -281,7 +287,7 @@ test "an integer keeps every digit" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
     var w = prometheus.Writer.init(&out);
-    const family = try prometheus.writeFamily(&w, .{ .name = "counters", .kind = .untyped });
+    const family = try w.writeFamily(.{ .name = "counters", .kind = .untyped });
     try family.write(.{ .case = "u64_max" }, std.math.maxInt(u64));
     try family.write(.{ .case = "above_2_53" }, 9007199254740993);
     try expect("integers.expected", out.buffered());
@@ -314,8 +320,7 @@ test "property: a histogram document keeps every bucket invariant" {
         var buffer: [document_size]u8 = undefined;
         var out: Io.Writer = .fixed(&buffer);
         var w = prometheus.Writer.init(&out);
-        try prometheus.writeHistogram(
-            &w,
+        try w.writeHistogram(
             .{ .name = "h", .kind = .histogram },
             .{ .k = "v" },
             limits[0..bucket_count],
