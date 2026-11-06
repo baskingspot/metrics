@@ -55,7 +55,7 @@ Not implemented:
 ## Install
 
 ```sh
-zig fetch --save git+https://github.com/baskingspot/prometheus
+zig fetch --save https://baskingspot.dev/prometheus/v0.1.0.tar.gz
 ```
 
 Add the module in `build.zig`:

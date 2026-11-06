@@ -5,6 +5,8 @@ All notable changes to prometheus are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-06
+
 ### Added
 
 - `Writer` is the expfmt cursor: `help`, `kind`, `name`, `value`, and `line` write one record each, and `writeMetric`, `writeFamily`, `writeHistogram`, and the series form are methods on it built only out of those five.
