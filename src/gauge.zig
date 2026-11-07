@@ -159,7 +159,7 @@ fn Gauge(comptime mode: Mode, comptime T: type) type {
             .atomic => Value(Bits),
         };
 
-        /// A gauge at zero. The way to make one: `Int(u64).zero`.
+        /// A gauge at zero. The way to make one: `gauge.Int(u64).zero`.
         pub const zero: Self = .{ .value = switch (mode) {
             .plain => 0,
             .atomic => .init(0),

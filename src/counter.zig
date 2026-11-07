@@ -35,7 +35,7 @@ fn Counter(comptime mode: Mode, comptime T: type) type {
         const Self = @This();
 
         pub const concurrency = mode;
-        pub const IntType = T;
+        pub const ValueType = T;
 
         const Storage = switch (mode) {
             .plain => T,
@@ -66,7 +66,7 @@ fn Counter(comptime mode: Mode, comptime T: type) type {
             };
         }
 
-        /// A counter at zero. The way to make one: `Int(u64).zero`.
+        /// A counter at zero. The way to make one: `counter.Int(u64).zero`.
         pub const zero: Self = .{ .value = switch (mode) {
             .plain => 0,
             .atomic => .init(0),
