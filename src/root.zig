@@ -7,14 +7,16 @@
 //! histogram family loops). Each exposition format is its own namespace, so a
 //! second one would sit beside it rather than become a flag.
 //!
-//! `Int` and `Atomic` are the recording side: an unsigned integer and an add,
-//! with the storage and the concurrency model chosen where it is declared, and
-//! no write method. The writer writes; `get` supplies the number.
+//! `counter` and `gauge` are the recording side: an integer with the storage and
+//! the concurrency model chosen where it is declared, and no write method. The
+//! writer writes; `get` supplies the number.
 
 const writer = @import("writer.zig");
 
-/// Recording types. `counter.Int(u64)` holds a number that only goes up.
+/// Recording types. `counter.Int(u64)` holds a number that only goes up;
+/// `gauge.Int(i64)` holds one that moves both ways.
 pub const counter = @import("counter.zig");
+pub const gauge = @import("gauge.zig");
 
 /// The Prometheus text exposition format.
 pub const prometheus = struct {
@@ -26,5 +28,6 @@ pub const prometheus = struct {
 
 test {
     _ = @import("counter.zig");
+    _ = @import("gauge.zig");
     _ = writer;
 }

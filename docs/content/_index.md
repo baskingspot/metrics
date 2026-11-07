@@ -307,6 +307,36 @@ Both of those lines are optional. `# HELP` and `# TYPE` exist for scrapers that
 read them; a caller writing samples alone through `writeMetric` pays nothing for
 them, and some backends ignore them entirely.
 
+# Gauges
+
+## A number that moves both ways
+
+`gauge.Int(T)` is a plain field and `gauge.Atomic(T)` is `std.atomic.Value(T)`,
+the same split a counter makes. The difference is the method set and the type: a
+gauge has `set` and `sub`, and its integer may be signed, because a gauge holds a
+temperature, a delta, or a queue depth that dips below its last reading.
+
+```zig
+{{ load_data(path = "examples/gauge.zig", format = "plain") | trim_end }}
+```
+
+`set`, `add`, `sub`, `inc`, `dec`, and `get`, with `zero` to make one.
+
+## Subtraction, and the floor an unsigned gauge has
+
+An unsigned gauge asserts, in `sub`, that the value it observed covers what it is
+subtracting: a debug build catches the dip below zero, and a release build wraps
+so the next scrape shows it. Saturating would hide the bug at a flat line, the
+same reason a counter does not saturate. A signed gauge has no such floor.
+Going negative is the point, and only `minInt` wraps.
+
+## HELP and TYPE are optional
+
+A gauge written through `writeMetric` carries neither line. Nothing requires
+them: `# HELP` and `# TYPE` are for scrapers that read the descriptor, and a
+caller that writes samples only pays nothing for them. `writeFamily` is there
+when you want the header.
+
 # Limits
 
 What is not here, named so nobody has to look.
