@@ -15,44 +15,35 @@
 
 const std = @import("std");
 const testing = std.testing;
+const storage = @import("storage.zig");
 const math = std.math;
-const Value = std.atomic.Value;
 
-const Mode = enum { atomic, plain };
-
-/// A counter whose field the caller owns. Only the owner writes it.
-///
-/// The name says the storage; the argument says the value type. `Local(u64)` is
-/// a `u64` field; `Atomic(u32)` is a `std.atomic.Value(u32)`.
+/// A counter whose field the caller owns, over a plain field. Only the owner
+/// writes it. `T` is the unsigned value type.
 pub fn Local(comptime T: type) type {
-    comptime if (@typeInfo(T) != .int or @typeInfo(T).int.signedness != .unsigned) {
-        @compileError("metrics: counter.Local(T) takes an unsigned integer, not " ++ @typeName(T));
-    };
-    return Counter(.plain, T);
+    comptime checkUnsigned(T, "counter.Local");
+    return Counter(storage.Local(T));
 }
 
-/// A counter any thread may write and any thread may read.
+/// A counter any thread may write and any thread may read, over an atomic.
 pub fn Atomic(comptime T: type) type {
-    comptime if (@typeInfo(T) != .int) {
-        @compileError("metrics: counter.Atomic(T) takes an unsigned integer, not " ++ @typeName(T));
-    };
-    return Counter(.atomic, T);
+    comptime checkUnsigned(T, "counter.Atomic");
+    return Counter(storage.Atomic(T));
 }
 
-fn Counter(comptime mode: Mode, comptime T: type) type {
-    comptime checkType(mode, T);
+fn checkUnsigned(comptime T: type, comptime constructor: []const u8) void {
+    comptime if (!storage.isInteger(T) or @typeInfo(T).int.signedness != .unsigned) {
+        @compileError("metrics: " ++ constructor ++ "(T) takes an unsigned integer, not " ++ @typeName(T));
+    };
+}
+
+fn Counter(comptime S: type) type {
     return struct {
         const Self = @This();
 
-        pub const concurrency = mode;
-        pub const ValueType = T;
+        pub const ValueType = S.Value;
 
-        const Storage = switch (mode) {
-            .plain => T,
-            .atomic => Value(T),
-        };
-
-        value: Storage,
+        value: S,
 
         /// One more. Wraps at `maxInt(T)`.
         pub inline fn inc(self: *Self) void {
@@ -60,47 +51,19 @@ fn Counter(comptime mode: Mode, comptime T: type) type {
         }
 
         /// Add `n`. Wraps at `maxInt(T)`.
-        pub inline fn add(self: *Self, n: T) void {
-            switch (mode) {
-                .plain => self.value +%= n,
-                .atomic => _ = self.value.fetchAdd(n, .monotonic),
-            }
+        pub inline fn add(self: *Self, n: S.Value) void {
+            self.value.add(n);
         }
 
-        /// The value now. With `.atomic` this is a monotonic load, which is all
-        /// a scrape needs: it orders nothing else.
-        pub inline fn get(self: *const Self) T {
-            return switch (mode) {
-                .plain => self.value,
-                .atomic => self.value.load(.monotonic),
-            };
+        /// The value now. An atomic storage loads monotonically, which is all a
+        /// scrape needs: it orders nothing else.
+        pub inline fn get(self: *const Self) S.Value {
+            return self.value.load();
         }
 
         /// A counter at zero. The way to make one: `counter.Local(u64).zero`.
-        pub const zero: Self = .{ .value = switch (mode) {
-            .plain => 0,
-            .atomic => .init(0),
-        } };
+        pub const zero: Self = .{ .value = S.zero };
     };
-}
-
-fn checkType(comptime mode: Mode, comptime T: type) void {
-    switch (@typeInfo(T)) {
-        .int => |info| {
-            if (info.signedness != .unsigned) {
-                @compileError("metrics: a counter counts up, so its type is unsigned, not " ++ @typeName(T));
-            }
-            if (mode == .atomic and !isAtomicWidth(info.bits)) {
-                @compileError("metrics: Atomic(" ++ @typeName(T) ++
-                    ") has no atomic storage; use 8, 16, 32, or 64 bits");
-            }
-        },
-        else => @compileError("metrics: a counter's type is an unsigned integer, not " ++ @typeName(T)),
-    }
-}
-
-fn isAtomicWidth(comptime bits: u16) bool {
-    return bits == 8 or bits == 16 or bits == 32 or bits == 64;
 }
 
 test "both modes add, read, and wrap the same way" {
