@@ -2,7 +2,7 @@ const std = @import("std");
 const metrics = @import("metrics");
 
 test "a gauge records a number that moves both ways" {
-    var in_flight: metrics.gauge.Int(i64) = .zero;
+    var in_flight: metrics.gauge.Local(i64) = .zero;
     in_flight.inc();
     in_flight.add(4);
     in_flight.sub(6);

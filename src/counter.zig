@@ -1,10 +1,11 @@
 //! A recording counter: an unsigned integer and an add, with the storage and
 //! the concurrency model chosen where the counter is declared.
 //!
-//! `Int(T)` is one field and a `+%`. It belongs to whoever holds it, which is a
-//! worker thread or a struct the caller already owns. `Atomic(T)` is
+//! `Local(T)` is one field and a `+%`. It belongs to whoever holds it, which is
+//! a worker thread or a struct the caller already owns. `Atomic(T)` is
 //! `std.atomic.Value(T)` with monotonic operations, for the case where a scrape
-//! reads a counter another thread is incrementing.
+//! reads a counter another thread is incrementing. The constructor names the
+//! storage and `T` names the value type.
 //!
 //! Both wrap at `maxInt(T)` and keep counting. A counter does not saturate:
 //! saturating turns a visible reset into a silent flat line.
@@ -20,12 +21,21 @@ const Value = std.atomic.Value;
 const Mode = enum { atomic, plain };
 
 /// A counter whose field the caller owns. Only the owner writes it.
-pub fn Int(comptime T: type) type {
+///
+/// The name says the storage; the argument says the value type. `Local(u64)` is
+/// a `u64` field; `Atomic(u32)` is a `std.atomic.Value(u32)`.
+pub fn Local(comptime T: type) type {
+    comptime if (@typeInfo(T) != .int or @typeInfo(T).int.signedness != .unsigned) {
+        @compileError("metrics: counter.Local(T) takes an unsigned integer, not " ++ @typeName(T));
+    };
     return Counter(.plain, T);
 }
 
 /// A counter any thread may write and any thread may read.
 pub fn Atomic(comptime T: type) type {
+    comptime if (@typeInfo(T) != .int) {
+        @compileError("metrics: counter.Atomic(T) takes an unsigned integer, not " ++ @typeName(T));
+    };
     return Counter(.atomic, T);
 }
 
@@ -66,7 +76,7 @@ fn Counter(comptime mode: Mode, comptime T: type) type {
             };
         }
 
-        /// A counter at zero. The way to make one: `counter.Int(u64).zero`.
+        /// A counter at zero. The way to make one: `counter.Local(u64).zero`.
         pub const zero: Self = .{ .value = switch (mode) {
             .plain => 0,
             .atomic => .init(0),
@@ -94,7 +104,7 @@ fn isAtomicWidth(comptime bits: u16) bool {
 }
 
 test "both modes add, read, and wrap the same way" {
-    var plain: Int(u64) = .zero;
+    var plain: Local(u64) = .zero;
     var atomic: Atomic(u64) = .zero;
     try testing.expectEqual(@as(u64, 0), plain.get());
     try testing.expectEqual(@as(u64, 0), atomic.get());
@@ -115,7 +125,7 @@ test "both modes add, read, and wrap the same way" {
 }
 
 test "the integer type is the counter's, not the platform's" {
-    var byte: Int(u8) = .zero;
+    var byte: Local(u8) = .zero;
     byte.add(255);
     byte.inc();
     try testing.expectEqual(@as(u8, 0), byte.get());
@@ -130,22 +140,22 @@ test "a counter is one word, in either mode" {
     // Every consumer of this type is a counter next to other counters, so the
     // claim that matters is that a counter costs a word and adds no padding of
     // its own. That is not visible by reading the type.
-    try testing.expectEqual(@as(usize, 8), @sizeOf(Int(u64)));
+    try testing.expectEqual(@as(usize, 8), @sizeOf(Local(u64)));
     try testing.expectEqual(@as(usize, 8), @sizeOf(Atomic(u64)));
-    try testing.expectEqual(@as(usize, 8), @alignOf(Int(u64)));
+    try testing.expectEqual(@as(usize, 8), @alignOf(Local(u64)));
     try testing.expectEqual(@as(usize, 8), @alignOf(Atomic(u64)));
 
     // One counter beside a u64: two words. Field offsets in an auto-layout
     // struct are the compiler's business, so the size is the claim here.
-    const Pair = struct { bytes: u64, errors: Int(u64) };
+    const Pair = struct { bytes: u64, errors: Local(u64) };
     try testing.expectEqual(@as(usize, 16), @sizeOf(Pair));
 
     // A block of counters beside two u64s, which is the shape a worker struct
     // has: four words, no gap added by a counter.
     const Worker = struct {
         started: u64,
-        requests: Int(u64),
-        errors: Int(u64),
+        requests: Local(u64),
+        errors: Local(u64),
         bytes: u64,
     };
     try testing.expectEqual(@as(usize, 32), @sizeOf(Worker));
@@ -155,7 +165,7 @@ test "a counter is one word, in either mode" {
     const Mixed = struct {
         a: u32,
         b: u32,
-        errors: Int(u64),
+        errors: Local(u64),
     };
     try testing.expectEqual(@as(usize, 16), @sizeOf(Mixed));
 }
