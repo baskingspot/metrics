@@ -2,7 +2,7 @@ const std = @import("std");
 const metrics = @import("metrics");
 
 test "record with a counter, write with the writer" {
-    var requests: metrics.Int(u64) = .zero;
+    var requests: metrics.counter.Int(u64) = .zero;
     requests.inc();
     requests.add(41);
 

@@ -13,8 +13,8 @@
 
 const writer = @import("writer.zig");
 
-pub const Int = @import("counter.zig").Int;
-pub const Atomic = @import("counter.zig").Atomic;
+/// Recording types. `counter.Int(u64)` holds a number that only goes up.
+pub const counter = @import("counter.zig");
 
 /// The Prometheus text exposition format.
 pub const prometheus = struct {

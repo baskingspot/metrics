@@ -253,8 +253,8 @@ try w.value(@as(u64, 7));
 
 ## A number and an add
 
-`Int(T)` is the recording side: an unsigned integer and an add, with the type
-and the concurrency model chosen where the counter is declared. `Int(T)` is one
+`counter.Int(T)` is the recording side: an unsigned integer and an add, with the type
+and the concurrency model chosen where the counter is declared. `counter.Int(T)` is one
 field and a `+%`, for state that belongs to one thread or to a struct the caller
 already owns. `Atomic(T)` is a `std.atomic.Value(T)` with monotonic operations,
 for a counter a scrape reads while another thread increments it.
