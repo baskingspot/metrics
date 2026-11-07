@@ -1,5 +1,5 @@
 +++
-title = "prometheus"
+title = "metrics"
 +++
 
 Prometheus text exposition format for Zig: write metrics to any writer, no HTTP.
@@ -30,27 +30,27 @@ The [API reference](api/) documents every public symbol.
 ## Install
 
 ```sh
-zig fetch --save https://baskingspot.dev/prometheus/v0.1.0.tar.gz
+zig fetch --save https://baskingspot.dev/metrics/v0.1.0.tar.gz
 ```
 
 Add the module in `build.zig`:
 
 ```zig
-const prometheus = b.dependency("prometheus", .{ .target = target, .optimize = optimize });
-exe.root_module.addImport("prometheus", prometheus.module("prometheus"));
+const metrics = b.dependency("metrics", .{ .target = target, .optimize = optimize });
+exe.root_module.addImport("metrics", metrics.module("metrics"));
 ```
 
-`prometheus` builds with Zig 0.16 and 0.17. Its one dependency is `testingx`,
+`metrics` builds with Zig 0.16 and 0.17. Its one dependency is `testingx`,
 which is lazy and comes after an early return in `build.zig`, so a consumer
 fetches nothing but the module.
 
 ## Import it
 
 ```zig
-const prometheus = @import("prometheus");
+const metrics = @import("metrics");
 ```
 
-No std namespace is named `prometheus`, so nothing needs an alias.
+No std namespace is named `metrics`, so nothing needs an alias.
 
 ## Pick a sink
 
@@ -60,7 +60,7 @@ buffer holds the document with no allocation:
 ```zig
 var buffer: [4096]u8 = undefined;
 var out: std.Io.Writer = .fixed(&buffer);
-var w: prometheus.Writer = .init(&out);
+var w: metrics.Writer = .init(&out);
 ```
 
 `Writer` is the whole interface above the sink: it holds the `*std.Io.Writer`
@@ -226,7 +226,7 @@ primitives and gets the same values and escaping.
 
 ```zig
 var out: std.Io.Writer = .fixed(&buffer);
-var w: prometheus.Writer = .init(&out);
+var w: metrics.Writer = .init(&out);
 try w.name("custom_total", .{ .kind = "custom" });
 try w.value(@as(u64, 7));
 ```

@@ -1,7 +1,7 @@
 <h1>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/static/logo-dark.svg">
-    <img src="docs/static/logo.svg" alt="prometheus" height="48">
+    <img src="docs/static/logo.svg" alt="metrics" height="48">
   </picture>
 </h1>
 
@@ -16,7 +16,7 @@ escaping around them, to any `std.Io.Writer`.
 ```zig
 var buffer: [4096]u8 = undefined;
 var out: std.Io.Writer = .fixed(&buffer);
-var w: prometheus.Writer = .init(&out);
+var w: metrics.Writer = .init(&out);
 
 const requests = try w.writeFamily(.{
     .name = "http_requests_total",
@@ -36,11 +36,11 @@ The API is pre-1.0: pin the commit, and expect it to move.
 
 ## What is in it
 
-- [Samples](https://baskingspot.dev/prometheus/#samples): `Writer.writeMetric` writes one line, and labels come from a struct's field names, so an illegal label name does not compile.
-- [Families](https://baskingspot.dev/prometheus/#families): `Writer.writeFamily` writes `# HELP` and `# TYPE` and returns the handle its samples go through.
-- [Histograms](https://baskingspot.dev/prometheus/#histograms): `Writer.writeHistogram` takes the caller's limits and cumulative counts and writes `_bucket`, `_sum`, and `_count`, `le` included.
-- [Values and escaping](https://baskingspot.dev/prometheus/#values-and-escaping): a float that reads back as an integer is written as one, and the three bytes that need escaping are escaped.
-- [The primitives](https://baskingspot.dev/prometheus/#the-primitives): `Writer` writes one record at a time, and every composition above it is built from those methods.
+- [Samples](https://baskingspot.dev/metrics/#samples): `Writer.writeMetric` writes one line, and labels come from a struct's field names, so an illegal label name does not compile.
+- [Families](https://baskingspot.dev/metrics/#families): `Writer.writeFamily` writes `# HELP` and `# TYPE` and returns the handle its samples go through.
+- [Histograms](https://baskingspot.dev/metrics/#histograms): `Writer.writeHistogram` takes the caller's limits and cumulative counts and writes `_bucket`, `_sum`, and `_count`, `le` included.
+- [Values and escaping](https://baskingspot.dev/metrics/#values-and-escaping): a float that reads back as an integer is written as one, and the three bytes that need escaping are escaped.
+- [The primitives](https://baskingspot.dev/metrics/#the-primitives): `Writer` writes one record at a time, and every composition above it is built from those methods.
 
 Not implemented:
 
@@ -55,25 +55,25 @@ Not implemented:
 ## Install
 
 ```sh
-zig fetch --save https://baskingspot.dev/prometheus/v0.1.0.tar.gz
+zig fetch --save https://baskingspot.dev/metrics/v0.1.0.tar.gz
 ```
 
 Add the module in `build.zig`:
 
 ```zig
-const prometheus = b.dependency("prometheus", .{ .target = target, .optimize = optimize });
-exe.root_module.addImport("prometheus", prometheus.module("prometheus"));
+const metrics = b.dependency("metrics", .{ .target = target, .optimize = optimize });
+exe.root_module.addImport("metrics", metrics.module("metrics"));
 ```
 
-No std namespace is named `prometheus`, so nothing needs an alias. `prometheus`
+No std namespace is named `metrics`, so nothing needs an alias. `metrics`
 builds with Zig 0.16 and 0.17. It has one dependency, `testingx`, marked lazy
 and used only after `build.zig` returns for a consumer, so a consumer's fetch
 graph is the module and nothing else.
 
 ## Documentation
 
-- The [guide](https://baskingspot.dev/prometheus/) covers samples, families, histograms, and the value and escaping rules.
-- The [API reference](https://baskingspot.dev/prometheus/api/) documents every public symbol in `src/root.zig`.
+- The [guide](https://baskingspot.dev/metrics/) covers samples, families, histograms, and the value and escaping rules.
+- The [API reference](https://baskingspot.dev/metrics/api/) documents every public symbol in `src/root.zig`.
 - [`docs/examples/`](docs/examples/) is the test-verified code shown in the guide: `just test` compiles and runs it alongside the module's own tests.
 - [`AGENTS.md`](AGENTS.md) has the working notes for the repository.
 

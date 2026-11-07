@@ -163,10 +163,10 @@ pub fn FamilyWriter(comptime m: Metric) type {
             count: u64,
         ) Io.Writer.Error!void {
             comptime if (m.kind != .histogram) {
-                @compileError("prometheus: writeHistogramSeries needs a Metric whose kind is .histogram");
+                @compileError("metrics: writeHistogramSeries needs a Metric whose kind is .histogram");
             };
             comptime if (@hasField(@TypeOf(label_values), "le")) {
-                @compileError("prometheus: a histogram label set cannot contain \"le\", which this writes");
+                @compileError("metrics: a histogram label set cannot contain \"le\", which this writes");
             };
             assert(counts.len == limits.len);
 
@@ -238,7 +238,7 @@ fn writeLabelValue(w: *Io.Writer, label: anytype) Io.Writer.Error!void {
         // `[]const u8`; both coerce to the same slice.
         .pointer => escaping.writeLabelValue(w, label),
         else => @compileError(
-            "prometheus: a label value is an integer or a string, not " ++
+            "metrics: a label value is an integer or a string, not " ++
                 @typeName(@TypeOf(label)),
         ),
     };
@@ -246,18 +246,18 @@ fn writeLabelValue(w: *Io.Writer, label: anytype) Io.Writer.Error!void {
 
 fn checkName(comptime name: []const u8) void {
     comptime if (!names.isValidMetricName(name)) {
-        @compileError("prometheus: metric name \"" ++ name ++
+        @compileError("metrics: metric name \"" ++ name ++
             "\" is not [a-zA-Z_:][a-zA-Z0-9_:]*");
     };
 }
 
 fn checkLabelName(comptime label_name: []const u8) void {
     comptime if (names.hasReservedPrefix(label_name)) {
-        @compileError("prometheus: label name \"" ++ label_name ++
+        @compileError("metrics: label name \"" ++ label_name ++
             "\" starts with \"__\", which is reserved");
     };
     comptime if (!names.isValidLabelName(label_name)) {
-        @compileError("prometheus: label name \"" ++ label_name ++
+        @compileError("metrics: label name \"" ++ label_name ++
             "\" is not [a-zA-Z_][a-zA-Z0-9_]*");
     };
 }

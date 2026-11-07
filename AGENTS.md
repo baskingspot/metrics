@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Working notes for AI coding agents in baskingspot/prometheus.
+Working notes for AI coding agents in baskingspot/metrics.
 
 ## What this is
 

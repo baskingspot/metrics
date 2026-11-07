@@ -1,9 +1,9 @@
-# The prometheus guide, served at baskingspot.dev/prometheus/. The theme and the
+# The metrics guide, served at baskingspot.dev/metrics/. The theme and the
 # site build come from baskingspot-docs; the router in baskingspot/site serves
-# /prometheus/...
-base_url = "https://baskingspot.dev/prometheus"
+# /metrics/...
+base_url = "https://baskingspot.dev/metrics"
 theme = "baskingspot"
-title = "prometheus"
+title = "metrics"
 description = "Prometheus text exposition format for Zig: write metrics to any writer, no HTTP."
 
 generate_feeds = false
@@ -19,6 +19,6 @@ light_theme = "github-light"
 dark_theme = "github-dark"
 
 [extra]
-repo = "baskingspot/prometheus"
+repo = "baskingspot/metrics"
 api = true
 third_party = false

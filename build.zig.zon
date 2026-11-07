@@ -1,7 +1,7 @@
 .{
-    .name = .prometheus,
+    .name = .metrics,
     .version = "0.1.0",
-    .fingerprint = 0x579d3a7b46028a7c, // Changing this has security and trust implications.
+    .fingerprint = 0x228aaae770208a4d, // Changing this has security and trust implications.
     // The package builds on both, and a 0.16 user must not be turned away by a
     // version check. `.github/ci.yaml` keeps the 0.16 lane honest.
     .minimum_zig_version = "0.16.0",

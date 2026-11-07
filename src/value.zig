@@ -31,10 +31,10 @@ pub fn write(w: *Io.Writer, value: anytype) Io.Writer.Error!void {
         .int, .comptime_int => w.print("{d}", .{value}),
         .float => switch (@bitSizeOf(@TypeOf(value))) {
             16, 32, 64 => writeFloat(w, @floatCast(value)),
-            else => @compileError("prometheus: a metric value is at most f64"),
+            else => @compileError("metrics: a metric value is at most f64"),
         },
         .comptime_float => writeFloat(w, @floatCast(value)),
-        else => @compileError("prometheus: a metric value is an integer or a float, not " ++ @typeName(@TypeOf(value))),
+        else => @compileError("metrics: a metric value is an integer or a float, not " ++ @typeName(@TypeOf(value))),
     };
 }
 

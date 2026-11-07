@@ -1,4 +1,4 @@
-# prometheus: Prometheus text exposition format for Zig: write metrics to any writer, no HTTP. `just --list` shows the recipes.
+# metrics: Prometheus text exposition format for Zig: write metrics to any writer, no HTTP. `just --list` shows the recipes.
 # AGENTS.md holds the working conventions.
 
 [private]
@@ -115,21 +115,21 @@ fmt:
 [group("ci")]
 check: test check-golden
 
-[doc("Build the site into zig-out/site/prometheus/: the guide (Zola, from docs/) and the API reference (docgen JSON, rendered by the theme's api.html) under api/")]
+[doc("Build the site into zig-out/site/metrics/: the guide (Zola, from docs/) and the API reference (docgen JSON, rendered by the theme's api.html) under api/")]
 [group("docs")]
 doc: api
-    baskingspot-docs build prometheus
+    baskingspot-docs build metrics
 
 [doc("Edit the guide with live reload (http://127.0.0.1:1111), API reference included")]
 [group("docs")]
 guide: api
-    baskingspot-docs serve prometheus
+    baskingspot-docs serve metrics
 
 # The API reference data. docgen comes from the baskingspot flake's docs shell,
 # so this is not a Zig build dependency.
 [private]
 api:
-    docgen --root src/root.zig --title prometheus --repo-url https://github.com/baskingspot/prometheus --rev main --format json --out docs/data
+    docgen --root src/root.zig --title metrics --repo-url https://github.com/baskingspot/metrics --rev main --format json --out docs/data
 
 [doc("Deploy the rendered docs to Cloudflare as an assets-only Worker (config in wrangler.jsonc). Needs CLOUDFLARE_API_TOKEN in the environment")]
 [group("docs")]

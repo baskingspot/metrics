@@ -18,8 +18,8 @@ const Io = std.Io;
 const Allocator = std.mem.Allocator;
 const math = std.math;
 
-const prometheus = @import("prometheus");
-const Metric = prometheus.Metric;
+const metrics = @import("metrics");
+const Metric = metrics.Metric;
 
 const fragments = [_][]const u8{
     "a", "Z", "0", "_", "\\", "\"", "\n", "\t", "\r", "\x00",
@@ -102,7 +102,7 @@ pub fn main(init: std.process.Init) !void {
 
 fn document(arena: Allocator, random: std.Random) ![]const u8 {
     var out: Io.Writer = .fixed(try arena.alloc(u8, document_capacity));
-    var w: prometheus.Writer = .init(&out);
+    var w: metrics.Writer = .init(&out);
     if (random.boolean()) {
         // Each catalog entry goes out at most once per document, so no name
         // repeats and no second HELP line appears.
@@ -121,7 +121,7 @@ const shapes = [_]type{ NoLabels, OneLabel, TwoLabels, ThreeLabels, JobInstance,
 const values = [_]type{ u64, i64, f64 };
 
 fn emit_family(
-    w: *prometheus.Writer,
+    w: *metrics.Writer,
     comptime family: Metric,
     arena: Allocator,
     random: std.Random,
@@ -148,7 +148,7 @@ fn emit_family(
 }
 
 fn emit_histogram(
-    w: *prometheus.Writer,
+    w: *metrics.Writer,
     comptime family: Metric,
     arena: Allocator,
     random: std.Random,

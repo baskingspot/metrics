@@ -6,7 +6,7 @@ pub fn build(b: *std.Build) void {
 
     // The one exported module. Everything below is a developer step, so a
     // consumer's fetch graph stops at this module.
-    const mod = b.addModule("prometheus", .{
+    const mod = b.addModule("metrics", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
@@ -42,7 +42,7 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .imports = &.{
-                .{ .name = "prometheus", .module = mod },
+                .{ .name = "metrics", .module = mod },
                 .{ .name = "testingx", .module = dep.module("testingx") },
             },
         });
@@ -57,7 +57,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("docs/examples/root.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{.{ .name = "prometheus", .module = mod }},
+        .imports = &.{.{ .name = "metrics", .module = mod }},
     });
     const example_tests = b.addTest(.{ .root_module = examples_mod, .test_runner = test_runner });
     const run_example_tests = b.addRunArtifact(example_tests);
@@ -77,7 +77,7 @@ pub fn build(b: *std.Build) void {
             .name = "bench-encode",
             .module = bench_dep.module("testingx"),
             .root_source_file = b.path("bench/encode.zig"),
-            .imports = &.{.{ .name = "prometheus", .module = mod }},
+            .imports = &.{.{ .name = "metrics", .module = mod }},
         });
         passthruArgs(b, run_bench);
         bench_step.dependOn(&run_bench.step);
@@ -98,7 +98,7 @@ fn addTool(
             .root_source_file = b.path(source),
             .target = target,
             .optimize = optimize,
-            .imports = &.{.{ .name = "prometheus", .module = mod }},
+            .imports = &.{.{ .name = "metrics", .module = mod }},
         }),
     });
     const run = b.addRunArtifact(tool);
