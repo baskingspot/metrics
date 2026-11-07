@@ -66,9 +66,11 @@ const metrics = b.dependency("metrics", .{ .target = target, .optimize = optimiz
 exe.root_module.addImport("metrics", metrics.module("metrics"));
 ```
 
-No std namespace is named `metrics`, so nothing needs an alias. A program with
-its own `metrics` module binds this one as `metricsx`, and call sites read
-`metricsx.prometheus.Writer`. `metrics` builds with Zig 0.16 and 0.17. It has one dependency, `testingx`, marked lazy
+No std namespace is named `metrics`, so nothing needs an alias. A program that already binds `metrics` to something of its own
+imports the format instead of the package — `const prometheus = @import("metrics").prometheus;`
+— and call sites read `prometheus.Writer` as before. One that wants the
+recording types too imports the package as `metricsx`, the org's rule for a
+shadowed name. `metrics` builds with Zig 0.16 and 0.17. It has one dependency, `testingx`, marked lazy
 and used only after `build.zig` returns for a consumer, so a consumer's fetch
 graph is the module and nothing else.
 

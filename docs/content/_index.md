@@ -50,17 +50,25 @@ fetches nothing but the module.
 const metrics = @import("metrics");
 ```
 
-No std namespace is named `metrics`, so nothing needs an alias. A program with
-its own `metrics` module binds this one as `metricsx`, by the org's `x` suffix:
+No std namespace is named `metrics`, so nothing needs an alias. A program that
+already binds `metrics` to something of its own imports the format it needs
+instead of the package:
+
+```zig
+const prometheus = @import("metrics").prometheus;
+```
+
+Call sites then read `prometheus.Writer`, exactly as they did before the
+package was renamed. A program that also wants the recording types imports the
+package under another name — `metricsx`, by the org's rule for a shadowed
+name — and reaches the format through it:
 
 ```zig
 exe.root_module.addImport("metricsx", metrics.module("metrics"));
 ```
 
-Call sites then read `metricsx.prometheus.Writer`. A program that names the
-type in many signatures can bind `const Writer = metricsx.prometheus.Writer;`
-in its own file: the format namespace exists so several can sit side by side,
-and one file may prefer the shorter name.
+The import name is local, so the only requirement is that it is not one you
+already use.
 
 ## Pick a sink
 
