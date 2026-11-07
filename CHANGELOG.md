@@ -7,6 +7,10 @@ All notable changes to metrics are recorded here. The format follows
 
 ### Added
 
+- `gauge.Int(T)` and `gauge.Atomic(T)`: a number that moves both ways, with `set`, `add`, `sub`, `inc`, `dec`, `get`, and `zero` to make one. The integer may be signed. An unsigned `sub` asserts in debug and wraps in release.
+
+### Added
+
 - `counter.Int(T)` and `counter.Atomic(T)`: an unsigned integer and an add, with `inc`, `add`, and `get`. Both wrap at `maxInt(T)`. There is no `set` and no write method.
 - The writer moved under a format namespace: `metrics.prometheus.Writer`, so a second exposition format can sit beside it.
 

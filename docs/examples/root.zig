@@ -9,6 +9,7 @@ pub const sinks = @import("sinks.zig");
 pub const escaping = @import("escaping.zig");
 pub const histogram = @import("histogram.zig");
 pub const counter = @import("counter.zig");
+pub const gauge = @import("gauge.zig");
 
 test {
     std.testing.refAllDecls(@This());
