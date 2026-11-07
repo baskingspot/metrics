@@ -41,7 +41,7 @@ The API is pre-1.0: pin the commit, and expect it to move.
 - [Histograms](https://baskingspot.dev/metrics/#histograms): `Writer.writeHistogram` takes the caller's limits and cumulative counts and writes `_bucket`, `_sum`, and `_count`, `le` included.
 - [Values and escaping](https://baskingspot.dev/metrics/#values-and-escaping): a float that reads back as an integer is written as one, and the three bytes that need escaping are escaped.
 - [The primitives](https://baskingspot.dev/metrics/#the-primitives): `Writer` writes one record at a time, and every composition above it is built from those methods.
-- [Counters](https://baskingspot.dev/metrics/#counters): `Counter(.plain)` and `Counter(.atomic)` are a `u64` and an add, wrapping, with no way to reset.
+- [Counters](https://baskingspot.dev/metrics/#counters): `Int(T)` and `Atomic(T)` are an unsigned integer and an add, wrapping, with no way to reset.
 
 Not implemented:
 

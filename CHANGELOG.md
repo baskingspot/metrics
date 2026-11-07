@@ -7,7 +7,7 @@ All notable changes to metrics are recorded here. The format follows
 
 ### Added
 
-- `Counter(.plain)` and `Counter(.atomic)`: a `u64` and an add, with `inc`, `add`, and `get`. Both wrap at `maxInt(u64)`. There is no `set` and no write method.
+- `Int(T)` and `Atomic(T)`: an unsigned integer and an add, with `inc`, `add`, and `get`. Both wrap at `maxInt(T)`. There is no `set` and no write method.
 - The writer moved under a format namespace: `metrics.prometheus.Writer`, so a second exposition format can sit beside it.
 
 ## [0.1.0] - 2026-11-06

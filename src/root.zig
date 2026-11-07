@@ -7,13 +7,14 @@
 //! histogram family loops). Each exposition format is its own namespace, so a
 //! second one would sit beside it rather than become a flag.
 //!
-//! `Counter` is the recording side: a `u64` and an add, chosen plain or atomic
-//! where it is declared, with no write method. The writer writes; `get` supplies
-//! the number.
+//! `Int` and `Atomic` are the recording side: an unsigned integer and an add,
+//! with the storage and the concurrency model chosen where it is declared, and
+//! no write method. The writer writes; `get` supplies the number.
 
 const writer = @import("writer.zig");
 
-pub const Counter = @import("counter.zig").Counter;
+pub const Int = @import("counter.zig").Int;
+pub const Atomic = @import("counter.zig").Atomic;
 
 /// The Prometheus text exposition format.
 pub const prometheus = struct {

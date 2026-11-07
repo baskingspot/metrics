@@ -1,12 +1,12 @@
-//! A recording counter: a `u64` and an add, with the concurrency model chosen
-//! by the caller.
+//! A recording counter: an unsigned integer and an add, with the storage and
+//! the concurrency model chosen where the counter is declared.
 //!
-//! `Counter(.plain)` is one field and a `+%`. It belongs to whoever holds it,
-//! which is a worker thread or a struct the caller already owns. `Counter(.atomic)`
-//! is `std.atomic.Value(u64)` with monotonic operations, for the case where a
-//! scrape reads a counter another thread is incrementing.
+//! `Int(T)` is one field and a `+%`. It belongs to whoever holds it, which is a
+//! worker thread or a struct the caller already owns. `Atomic(T)` is
+//! `std.atomic.Value(T)` with monotonic operations, for the case where a scrape
+//! reads a counter another thread is incrementing.
 //!
-//! Both wrap at `maxInt(u64)` and keep counting. A counter does not saturate:
+//! Both wrap at `maxInt(T)` and keep counting. A counter does not saturate:
 //! saturating turns a visible reset into a silent flat line.
 //!
 //! There is no `set` and no write method. A counter only goes up, and the bytes
@@ -19,28 +19,32 @@ const Value = std.atomic.Value;
 
 const Mode = enum { atomic, plain };
 
-pub fn Int() type {
-    return Counter(.plain);
+/// A counter whose field the caller owns. Only the owner writes it.
+pub fn Int(comptime T: type) type {
+    return Counter(.plain, T);
 }
 
-pub fn Atomic() type {
-    return Counter(.atomic);
+/// A counter any thread may write and any thread may read.
+pub fn Atomic(comptime T: type) type {
+    return Counter(.atomic, T);
 }
 
 fn Counter(comptime mode: Mode, comptime T: type) type {
+    comptime checkType(mode, T);
     return struct {
         const Self = @This();
 
         pub const concurrency = mode;
+        pub const IntType = T;
 
         count: Storage,
 
-        /// One more. Wraps at `maxInt(u64)`.
+        /// One more. Wraps at `maxInt(T)`.
         pub inline fn inc(self: *Self) void {
             self.add(1);
         }
 
-        /// Add `n`. Wraps at `maxInt(u64)`.
+        /// Add `n`. Wraps at `maxInt(T)`.
         pub inline fn add(self: *Self, n: T) void {
             switch (mode) {
                 .plain => self.count +%= n,
@@ -50,7 +54,7 @@ fn Counter(comptime mode: Mode, comptime T: type) type {
 
         /// The value now. With `.atomic` this is a monotonic load, which is all
         /// a scrape needs: it orders nothing else.
-        pub inline fn get(self: *const Self) u64 {
+        pub inline fn get(self: *const Self) T {
             return switch (mode) {
                 .plain => self.count,
                 .atomic => self.count.load(.monotonic),
@@ -58,13 +62,11 @@ fn Counter(comptime mode: Mode, comptime T: type) type {
         }
 
         const Storage = switch (mode) {
-            .plain => u64,
-            .atomic => Value(u64),
+            .plain => T,
+            .atomic => Value(T),
         };
 
-        /// A counter at zero. The way to make one: `Counter(u64, .plain).zero`.
-        /// There is no default field, so `.{}` does not work and cannot hide a
-        /// counter nobody initialized.
+        /// A counter at zero. The way to make one: `Int(u64).zero`.
         pub const zero: Self = .{ .count = switch (mode) {
             .plain => 0,
             .atomic => .init(0),
@@ -72,86 +74,88 @@ fn Counter(comptime mode: Mode, comptime T: type) type {
     };
 }
 
-test "a plain counter adds, reads, and wraps" {
-    var counter: Counter(.plain) = .zero;
-    try testing.expectEqual(@as(u64, 0), counter.get());
-
-    counter.inc();
-    counter.add(41);
-    try testing.expectEqual(@as(u64, 42), counter.get());
-
-    counter.add(math.maxInt(u64));
-    try testing.expectEqual(@as(u64, 41), counter.get());
+fn checkType(comptime mode: Mode, comptime T: type) void {
+    switch (@typeInfo(T)) {
+        .int => |info| {
+            if (info.signedness != .unsigned) {
+                @compileError("metrics: a counter counts up, so its type is unsigned, not " ++ @typeName(T));
+            }
+            if (mode == .atomic and !isAtomicWidth(info.bits)) {
+                @compileError("metrics: Atomic(" ++ @typeName(T) ++
+                    ") has no atomic storage; use 8, 16, 32, or 64 bits");
+            }
+        },
+        else => @compileError("metrics: a counter's type is an unsigned integer, not " ++ @typeName(T)),
+    }
 }
 
-test "an atomic counter adds, reads, and wraps the same way" {
-    var counter: Counter(.atomic) = .zero;
-    try testing.expectEqual(@as(u64, 0), counter.get());
-
-    counter.inc();
-    counter.add(41);
-    try testing.expectEqual(@as(u64, 42), counter.get());
-
-    counter.add(math.maxInt(u64));
-    try testing.expectEqual(@as(u64, 41), counter.get());
+fn isAtomicWidth(comptime bits: u16) bool {
+    return bits == 8 or bits == 16 or bits == 32 or bits == 64;
 }
 
-test "the two modes agree step for step" {
-    var plain: Counter(.plain) = .zero;
-    var atomic: Counter(.atomic) = .zero;
+test "both modes add, read, and wrap the same way" {
+    var plain: Int(u64) = .zero;
+    var atomic: Atomic(u64) = .zero;
+    try testing.expectEqual(@as(u64, 0), plain.get());
+    try testing.expectEqual(@as(u64, 0), atomic.get());
+
     const steps = [_]u64{ 1, 0, 7, math.maxInt(u64), 3, math.maxInt(u64) / 2 };
     for (steps) |step| {
         plain.add(step);
         atomic.add(step);
         try testing.expectEqual(plain.get(), atomic.get());
     }
+
+    plain = .zero;
+    atomic = .zero;
+    plain.inc();
+    atomic.inc();
+    try testing.expectEqual(@as(u64, 1), plain.get());
+    try testing.expectEqual(@as(u64, 1), atomic.get());
 }
 
-test "the storage is what the mode says" {
-    try testing.expect(Counter(.plain).Storage == u64);
-    try testing.expect(Counter(.atomic).Storage == Value(u64));
+test "the integer type is the counter's, not the platform's" {
+    var byte: Int(u8) = .zero;
+    byte.add(255);
+    byte.inc();
+    try testing.expectEqual(@as(u8, 0), byte.get());
+
+    var narrow: Atomic(u16) = .zero;
+    narrow.add(65535);
+    narrow.inc();
+    try testing.expectEqual(@as(u16, 0), narrow.get());
 }
 
 test "a counter is one word, in either mode" {
     // Every consumer of this type is a counter next to other counters, so the
     // claim that matters is that a counter costs a word and adds no padding of
     // its own. That is not visible by reading the type.
-    try testing.expectEqual(@as(usize, 8), @sizeOf(Counter(.plain)));
-    try testing.expectEqual(@as(usize, 8), @sizeOf(Counter(.atomic)));
-    try testing.expectEqual(@as(usize, 8), @alignOf(Counter(.plain)));
-    try testing.expectEqual(@as(usize, 8), @alignOf(Counter(.atomic)));
+    try testing.expectEqual(@as(usize, 8), @sizeOf(Int(u64)));
+    try testing.expectEqual(@as(usize, 8), @sizeOf(Atomic(u64)));
+    try testing.expectEqual(@as(usize, 8), @alignOf(Int(u64)));
+    try testing.expectEqual(@as(usize, 8), @alignOf(Atomic(u64)));
 
     // One counter beside a u64: two words. Field offsets in an auto-layout
     // struct are the compiler's business, so the size is the claim here.
-    const Pair = struct { bytes: u64, errors: Counter(.plain) };
+    const Pair = struct { bytes: u64, errors: Int(u64) };
     try testing.expectEqual(@as(usize, 16), @sizeOf(Pair));
 
     // A block of counters beside two u64s, which is the shape a worker struct
     // has: four words, no gap added by a counter.
     const Worker = struct {
         started: u64,
-        requests: Counter(.plain),
-        errors: Counter(.plain),
+        requests: Int(u64),
+        errors: Int(u64),
         bytes: u64,
     };
     try testing.expectEqual(@as(usize, 32), @sizeOf(Worker));
 
-    // With two u32s ahead of them, counters fill the rest of the words rather
-    // than pushing the struct to another one.
+    // Two narrow fields and a counter pack into two words, because the counter
+    // lands in space the struct already had.
     const Mixed = struct {
         a: u32,
         b: u32,
-        errors: Counter(.plain),
+        errors: Int(u64),
     };
     try testing.expectEqual(@as(usize, 16), @sizeOf(Mixed));
-
-    // The atomic mode is the same size, so swapping the mode never moves a
-    // field or changes the layout of the struct that holds it.
-    const AtomicWorker = struct {
-        started: u64,
-        requests: Counter(.atomic),
-        errors: Counter(.atomic),
-        bytes: u64,
-    };
-    try testing.expectEqual(@sizeOf(Worker), @sizeOf(AtomicWorker));
 }

@@ -253,11 +253,11 @@ try w.value(@as(u64, 7));
 
 ## A number and an add
 
-`Counter` is the recording side: a `u64` and an add, with the concurrency model
-chosen where the counter is declared. `Counter(.plain)` is one field and a `+%`,
-for state that belongs to one thread or to a struct the caller already owns.
-`Counter(.atomic)` is a `std.atomic.Value(u64)` with monotonic operations, for a
-counter a scrape reads while another thread increments it.
+`Int(T)` is the recording side: an unsigned integer and an add, with the type
+and the concurrency model chosen where the counter is declared. `Int(T)` is one
+field and a `+%`, for state that belongs to one thread or to a struct the caller
+already owns. `Atomic(T)` is a `std.atomic.Value(T)` with monotonic operations,
+for a counter a scrape reads while another thread increments it.
 
 ```zig
 {{ load_data(path = "examples/counter.zig", format = "plain") | trim_end }}
@@ -265,15 +265,17 @@ counter a scrape reads while another thread increments it.
 
 ## Wrapping, and no way to reset
 
-Both modes wrap at `maxInt(u64)` and keep counting. A counter that saturated
+Both modes wrap at `maxInt(T)` and keep counting. A counter that saturated
 would turn a visible reset into a silent flat line.
 
 There is no `set` and no write method: a counter only goes up, and the bytes are
 the writer's job. Read it with `get` and pass the number to `writeMetric`,
 `writeFamily`, or a histogram.
 
-Both modes are `u64`, and `get` is a monotonic load in the atomic case, which
-orders nothing else. A caller that needs a stronger ordering around its own data
+`T` is whatever unsigned integer the counter should be: `u8` for a flag-like
+count, `u32` where a word is enough, `u64` by default. `Atomic(T)` needs 8, 16,
+32, or 64 bits, which is what the platform can increment atomically. `get` is a
+monotonic load in the atomic case, which orders nothing else. A caller that needs a stronger ordering around its own data
 does that ordering itself.
 
 # Limits
