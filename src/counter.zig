@@ -14,25 +14,26 @@
 
 const std = @import("std");
 const testing = std.testing;
+const math = std.math;
+const Value = std.atomic.Value;
 
 pub const Mode = enum { atomic, plain };
 
 pub fn Counter(comptime mode: Mode) type {
-    // ast-grep-ignore: public-struct-field-default -- `.{}` is the constructor: a fresh counter is zero
     return struct {
         const Self = @This();
 
         pub const concurrency = mode;
 
-        count: Storage = initial,
+        count: Storage,
 
         /// One more. Wraps at `maxInt(u64)`.
-        pub fn inc(self: *Self) void {
+        pub inline fn inc(self: *Self) void {
             self.add(1);
         }
 
         /// Add `n`. Wraps at `maxInt(u64)`.
-        pub fn add(self: *Self, n: u64) void {
+        pub inline fn add(self: *Self, n: u64) void {
             switch (mode) {
                 .plain => self.count +%= n,
                 .atomic => _ = self.count.fetchAdd(n, .monotonic),
@@ -41,7 +42,7 @@ pub fn Counter(comptime mode: Mode) type {
 
         /// The value now. With `.atomic` this is a monotonic load, which is all
         /// a scrape needs: it orders nothing else.
-        pub fn get(self: *const Self) u64 {
+        pub inline fn get(self: *const Self) u64 {
             return switch (mode) {
                 .plain => self.count,
                 .atomic => self.count.load(.monotonic),
@@ -50,10 +51,10 @@ pub fn Counter(comptime mode: Mode) type {
 
         const Storage = switch (mode) {
             .plain => u64,
-            .atomic => std.atomic.Value(u64),
+            .atomic => Value(u64),
         };
 
-        const initial: Storage = switch (mode) {
+        pub const zero: Storage = switch (mode) {
             .plain => 0,
             .atomic => .init(0),
         };
@@ -61,7 +62,7 @@ pub fn Counter(comptime mode: Mode) type {
 }
 
 test "a plain counter adds, reads, and wraps" {
-    var counter: Counter(.plain) = .{};
+    var counter: Counter(.plain) = .zero;
     try testing.expectEqual(@as(u64, 0), counter.get());
 
     counter.inc();
@@ -73,7 +74,7 @@ test "a plain counter adds, reads, and wraps" {
 }
 
 test "an atomic counter adds, reads, and wraps the same way" {
-    var counter: Counter(.atomic) = .{};
+    var counter: Counter(.atomic) = .zero;
     try testing.expectEqual(@as(u64, 0), counter.get());
 
     counter.inc();
@@ -85,9 +86,9 @@ test "an atomic counter adds, reads, and wraps the same way" {
 }
 
 test "the two modes agree step for step" {
-    var plain: Counter(.plain) = .{};
-    var atomic: Counter(.atomic) = .{};
-    const steps = [_]u64{ 1, 0, 7, std.math.maxInt(u64), 3, std.math.maxInt(u64) / 2 };
+    var plain: Counter(.plain) = .zero;
+    var atomic: Counter(.atomic) = .zero;
+    const steps = [_]u64{ 1, 0, 7, math.maxInt(u64), 3, math.maxInt(u64) / 2 };
     for (steps) |step| {
         plain.add(step);
         atomic.add(step);
@@ -97,7 +98,7 @@ test "the two modes agree step for step" {
 
 test "the storage is what the mode says" {
     try testing.expect(Counter(.plain).Storage == u64);
-    try testing.expect(Counter(.atomic).Storage == std.atomic.Value(u64));
+    try testing.expect(Counter(.atomic).Storage == Value(u64));
 }
 
 test "a counter is one word, in either mode" {
