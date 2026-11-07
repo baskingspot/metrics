@@ -5,7 +5,7 @@ const metrics = @import("metrics");
 test "a histogram family from the caller's cumulative counts" {
     var buffer: [4096]u8 = undefined;
     var out: std.Io.Writer = .fixed(&buffer);
-    var w: metrics.Writer = .init(&out);
+    var w: metrics.prometheus.Writer = .init(&out);
 
     try w.writeHistogram(.{
         .name = "request_latency_seconds",
