@@ -17,9 +17,17 @@ const testing = std.testing;
 const math = std.math;
 const Value = std.atomic.Value;
 
-pub const Mode = enum { atomic, plain };
+const Mode = enum { atomic, plain };
 
-pub fn Counter(comptime mode: Mode) type {
+pub fn Int() type {
+    return Counter(.plain);
+}
+
+pub fn Atomic() type {
+    return Counter(.atomic);
+}
+
+fn Counter(comptime mode: Mode, comptime T: type) type {
     return struct {
         const Self = @This();
 
@@ -33,7 +41,7 @@ pub fn Counter(comptime mode: Mode) type {
         }
 
         /// Add `n`. Wraps at `maxInt(u64)`.
-        pub inline fn add(self: *Self, n: u64) void {
+        pub inline fn add(self: *Self, n: T) void {
             switch (mode) {
                 .plain => self.count +%= n,
                 .atomic => _ = self.count.fetchAdd(n, .monotonic),
@@ -54,10 +62,13 @@ pub fn Counter(comptime mode: Mode) type {
             .atomic => Value(u64),
         };
 
-        pub const zero: Storage = switch (mode) {
+        /// A counter at zero. The way to make one: `Counter(u64, .plain).zero`.
+        /// There is no default field, so `.{}` does not work and cannot hide a
+        /// counter nobody initialized.
+        pub const zero: Self = .{ .count = switch (mode) {
             .plain => 0,
             .atomic => .init(0),
-        };
+        } };
     };
 }
 
@@ -69,7 +80,7 @@ test "a plain counter adds, reads, and wraps" {
     counter.add(41);
     try testing.expectEqual(@as(u64, 42), counter.get());
 
-    counter.add(std.math.maxInt(u64));
+    counter.add(math.maxInt(u64));
     try testing.expectEqual(@as(u64, 41), counter.get());
 }
 
@@ -81,7 +92,7 @@ test "an atomic counter adds, reads, and wraps the same way" {
     counter.add(41);
     try testing.expectEqual(@as(u64, 42), counter.get());
 
-    counter.add(std.math.maxInt(u64));
+    counter.add(math.maxInt(u64));
     try testing.expectEqual(@as(u64, 41), counter.get());
 }
 
