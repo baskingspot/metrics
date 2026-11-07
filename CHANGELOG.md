@@ -7,11 +7,11 @@ All notable changes to metrics are recorded here. The format follows
 
 ### Added
 
-- `gauge.Int(T)`, `gauge.Float(T)`, and `gauge.Atomic(T)`: a number that moves both ways, with `set`, `add`, `sub`, `inc`, `dec`, `get`, and `zero` to make one. The integer may be signed and the float is `f32` or `f64`. An unsigned `sub` asserts in debug and wraps in release; an atomic float is an integer atomic holding the bit pattern, added through a compare-exchange loop.
+- `gauge.Local(T)` and `gauge.Atomic(T)`: a number that moves both ways, with `set`, `add`, `sub`, `inc`, `dec`, `get`, and `zero` to make one. The integer may be signed and the float is `f32` or `f64`. An unsigned `sub` asserts in debug and wraps in release; an atomic float is an integer atomic holding the bit pattern, added through a compare-exchange loop.
 
 ### Added
 
-- `counter.Int(T)` and `counter.Atomic(T)`: an unsigned integer and an add, with `inc`, `add`, and `get`. Both wrap at `maxInt(T)`. There is no `set` and no write method.
+- `counter.Local(T)` and `counter.Atomic(T)`: an unsigned integer and an add, with `inc`, `add`, and `get`. Both wrap at `maxInt(T)`. There is no `set` and no write method.
 - The writer moved under a format namespace: `metrics.prometheus.Writer`, so a second exposition format can sit beside it.
 
 ## [0.1.0] - 2026-11-06

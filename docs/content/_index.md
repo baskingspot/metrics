@@ -253,11 +253,11 @@ try w.value(@as(u64, 7));
 
 ## A number and an add
 
-`counter.Int(T)` and `counter.Atomic(T)` are the recording side: an unsigned
+`counter.Local(T)` and `counter.Atomic(T)` are the recording side: an unsigned
 integer and an add, with the type and the concurrency model chosen where the
 counter is declared.
 
-`counter.Int(T)` is one field and a `+%`, for state that belongs to one thread
+`counter.Local(T)` is one field and a `+%`, for state that belongs to one thread
 or to a struct the caller already owns. `counter.Atomic(T)` is a
 `std.atomic.Value(T)` with monotonic operations, for a counter a scrape reads
 while another thread increments it.
@@ -296,7 +296,7 @@ const families = struct {
     };
 };
 
-var requests: metrics.counter.Int(u64) = .zero;
+var requests: metrics.counter.Local(u64) = .zero;
 
 // where the document is written
 const family = try w.writeFamily(families.requests);
@@ -317,7 +317,7 @@ at the write site:
 try w.writeMetric("process_cpu_seconds_total", .{}, cpu_nanos.get() / 1e9);
 ```
 
-`counter.Int(u64)` of nanoseconds is exact and branch-free, and the division
+`counter.Local(u64)` of nanoseconds is exact and branch-free, and the division
 happens once per scrape. An `f64` accumulator of seconds stops being exact the
 moment the total passes 2^53 nanoseconds, which is about 104 days of process
 time: inside the lifetime of a busy service, and the digits are gone silently.
@@ -334,8 +334,9 @@ loop, not an `f64` field. None has appeared yet.
 
 ## A number that moves both ways
 
-`gauge.Int(T)` and `gauge.Float(T)` are plain fields; `gauge.Atomic(T)` is a
-`std.atomic.Value` and takes either. The difference from a counter is the method
+`gauge.Local(T)` is a plain field; `gauge.Atomic(T)` is a `std.atomic.Value`.
+The constructor names the storage and `T` names the value type: `Local(i64)`,
+`Local(f64)`, `Atomic(u32)`. The difference from a counter is the method
 set and the type: a gauge has `set` and `sub`, its integer may be signed, and its
 float is `f32` or `f64`, because a gauge holds a temperature, a ratio, or a queue
 depth that dips below its last reading.

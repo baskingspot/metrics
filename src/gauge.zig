@@ -1,17 +1,14 @@
-//! A recording gauge: a number that moves both ways, with the storage and the
-//! concurrency model chosen where it is declared.
+//! A recording gauge: a number that moves both ways, with the storage chosen by
+//! the constructor and the value type by the argument.
 //!
-//! `Int(T)` and `Float(T)` are one field. They belong to whoever holds them,
-//! which is a worker thread or a struct the caller already owns. `Atomic(T)`
-//! takes either and is a `std.atomic.Value` with monotonic operations, for a
-//! gauge a scrape reads while another thread writes it.
+//! `Local(T)` is one field and belongs to whoever holds it, which is a worker
+//! thread or a struct the caller already owns. `Atomic(T)` is a
+//! `std.atomic.Value` with monotonic operations, for a gauge a scrape reads
+//! while another thread writes it.
 //!
 //! A gauge holds a temperature, a delta, a queue depth that dips below its last
 //! reading, so its integer may be signed and its float is `f32` or `f64`. The
 //! counter has neither.
-//!
-//! An atomic float is an integer atomic holding the bit pattern: `set` and `get`
-//! are a store and a load, and `add` and `sub` are a compare-exchange loop.
 //!
 //! There is no write method. The bytes on the wire are the writer's job: read
 //! the gauge with `get` and pass the number.
@@ -25,25 +22,23 @@ const Io = std.Io;
 
 const Mode = enum { atomic, plain };
 
-/// A gauge whose field the caller owns, holding an integer. Only the owner
-/// writes it.
-pub fn Int(comptime T: type) type {
-    comptime if (@typeInfo(T) != .int) {
-        @compileError("metrics: gauge.Int(T) takes an integer, not " ++ @typeName(T));
-    };
-    return Gauge(.plain, T);
-}
-
-/// A gauge whose field the caller owns, holding an `f32` or an `f64`.
-pub fn Float(comptime T: type) type {
-    comptime if (@typeInfo(T) != .float) {
-        @compileError("metrics: gauge.Float(T) takes f32 or f64, not " ++ @typeName(T));
+/// A gauge whose field the caller owns. Only the owner writes it.
+///
+/// The name says the storage; the argument says the value type. `Local(i64)` is
+/// an `i64` field, `Local(f64)` an `f64`, and `Atomic(u32)` a
+/// `std.atomic.Value(u32)`.
+pub fn Local(comptime T: type) type {
+    comptime if (!isInteger(T) and !isFloat(T)) {
+        @compileError("metrics: gauge.Local(T) takes an integer, f32, or f64, not " ++ @typeName(T));
     };
     return Gauge(.plain, T);
 }
 
 /// A gauge any thread may write and any thread may read: an integer or a float.
 pub fn Atomic(comptime T: type) type {
+    comptime if (!isInteger(T) and !isFloat(T)) {
+        @compileError("metrics: gauge.Atomic(T) takes an integer, f32, or f64, not " ++ @typeName(T));
+    };
     return Gauge(.atomic, T);
 }
 
@@ -51,7 +46,6 @@ fn Gauge(comptime mode: Mode, comptime T: type) type {
     comptime checkType(mode, T);
     return struct {
         const Self = @This();
-        const Bits = AtomicBits(T);
 
         pub const concurrency = mode;
         pub const ValueType = T;
@@ -62,7 +56,7 @@ fn Gauge(comptime mode: Mode, comptime T: type) type {
         pub inline fn set(self: *Self, v: T) void {
             switch (mode) {
                 .plain => self.value = v,
-                .atomic => self.value.store(bitCastToBits(v), .monotonic),
+                .atomic => self.value.store(v, .monotonic),
             }
         }
 
@@ -76,13 +70,7 @@ fn Gauge(comptime mode: Mode, comptime T: type) type {
                         self.value +%= n;
                     }
                 },
-                .atomic => {
-                    if (comptime isFloat(T)) {
-                        self.fetchFloat(n);
-                    } else {
-                        _ = self.value.fetchAdd(n, .monotonic);
-                    }
-                },
+                .atomic => _ = self.value.fetchAdd(n, .monotonic),
             }
         }
 
@@ -110,12 +98,8 @@ fn Gauge(comptime mode: Mode, comptime T: type) type {
                     }
                 },
                 .atomic => {
-                    if (comptime isFloat(T)) {
-                        self.fetchFloat(-n);
-                    } else {
-                        const previous = self.value.fetchSub(n, .monotonic);
-                        if (comptime hasFloor(T)) assert(previous >= n);
-                    }
+                    const previous = self.value.fetchSub(n, .monotonic);
+                    if (comptime hasFloor(T)) assert(previous >= n);
                 },
             }
         }
@@ -135,31 +119,16 @@ fn Gauge(comptime mode: Mode, comptime T: type) type {
         pub inline fn get(self: *const Self) T {
             return switch (mode) {
                 .plain => self.value,
-                .atomic => @bitCast(self.value.load(.monotonic)),
+                .atomic => self.value.load(.monotonic),
             };
-        }
-
-        /// The compare-exchange loop an atomic float needs. An integer atomic
-        /// has `fetchAdd`; a float one does not, so this loads the bit pattern,
-        /// computes the new one, and retries if another thread won the race.
-        fn fetchFloat(self: *Self, n: T) void {
-            // A no-op add does not need to contend for the line.
-            if (n == 0) return;
-            var current: Bits = self.value.load(.monotonic);
-            while (true) {
-                const next: Bits = bitCastToBits(@as(T, @bitCast(current)) + n);
-                if (self.value.cmpxchgWeak(current, next, .monotonic, .monotonic)) |observed| {
-                    current = observed;
-                } else return;
-            }
         }
 
         const Storage = switch (mode) {
             .plain => T,
-            .atomic => Value(Bits),
+            .atomic => AtomicStorage(T),
         };
 
-        /// A gauge at zero. The way to make one: `gauge.Int(u64).zero`.
+        /// A gauge at zero. The way to make one: `gauge.Local(i64).zero`.
         pub const zero: Self = .{ .value = switch (mode) {
             .plain => 0,
             .atomic => .init(0),
@@ -167,26 +136,64 @@ fn Gauge(comptime mode: Mode, comptime T: type) type {
     };
 }
 
-/// The integer an atomic gauge stores: the type itself for an integer, and the
-/// bit pattern for a float.
+/// The integer atomic an atomic gauge stores: the type itself for an integer,
+/// and `AtomicFloat` for a float.
+fn AtomicStorage(comptime T: type) type {
+    return if (isFloat(T)) AtomicFloat(T) else Value(T);
+}
+
+/// An atomic `f32` or `f64`. There is no atomic float add to call, so this is an
+/// integer atomic holding the bit pattern: `load` and `store` are a load and a
+/// store on it, and `fetchAdd` is a compare-exchange loop.
+fn AtomicFloat(comptime T: type) type {
+    comptime assert(isFloat(T));
+    return struct {
+        const Self = @This();
+        const Bits = AtomicBits(T);
+
+        bits: Value(Bits),
+
+        pub fn init(v: T) Self {
+            return .{ .bits = .init(@bitCast(v)) };
+        }
+
+        pub fn load(self: *const Self, comptime order: std.builtin.AtomicOrder) T {
+            return @bitCast(self.bits.load(order));
+        }
+
+        pub fn store(self: *Self, v: T, comptime order: std.builtin.AtomicOrder) void {
+            self.bits.store(@bitCast(v), order);
+        }
+
+        /// The value the caller observed, like the integer `fetchAdd`.
+        pub fn fetchAdd(self: *Self, n: T, comptime order: std.builtin.AtomicOrder) T {
+            // A no-op add does not need to contend for the line.
+            if (n == 0) return self.load(order);
+            var current: Bits = self.bits.load(order);
+            while (true) {
+                const next: Bits = @bitCast(@as(T, @bitCast(current)) + n);
+                if (self.bits.cmpxchgWeak(current, next, order, order)) |observed| {
+                    current = observed;
+                } else return @bitCast(current);
+            }
+        }
+
+        pub fn fetchSub(self: *Self, n: T, comptime order: std.builtin.AtomicOrder) T {
+            return self.fetchAdd(-n, order);
+        }
+    };
+}
+
+/// The integer an atomic float is stored in: 32 bits for an `f32`, 64 for an
+/// `f64`.
 fn AtomicBits(comptime T: type) type {
     return switch (@typeInfo(T)) {
-        .int => T,
         .float => |info| switch (info.bits) {
             32 => u32,
             64 => u64,
             else => @compileError("metrics: an atomic gauge is 32 or 64 bits, not " ++ @typeName(T)),
         },
-        else => @compileError("metrics: a gauge's type is an integer or a float, not " ++ @typeName(T)),
-    };
-}
-
-fn bitCastToBits(v: anytype) AtomicBits(@TypeOf(v)) {
-    const T = @TypeOf(v);
-    return switch (@typeInfo(T)) {
-        .int => v,
-        .float => @bitCast(v),
-        else => @compileError("unreachable"),
+        else => @compileError("metrics: AtomicBits takes a float, not " ++ @typeName(T)),
     };
 }
 
@@ -194,13 +201,17 @@ fn checkType(comptime mode: Mode, comptime T: type) void {
     switch (@typeInfo(T)) {
         .int => |info| {
             if (mode == .atomic and !isAtomicWidth(info.bits)) {
-                @compileError("metrics: Atomic(" ++ @typeName(T) ++
+                @compileError("metrics: gauge.Atomic(" ++ @typeName(T) ++
                     ") has no atomic storage; use 8, 16, 32, or 64 bits");
             }
         },
         .float => {},
         else => @compileError("metrics: a gauge's type is an integer or a float, not " ++ @typeName(T)),
     }
+}
+
+fn isInteger(comptime T: type) bool {
+    return @typeInfo(T) == .int;
 }
 
 fn isFloat(comptime T: type) bool {
@@ -210,79 +221,82 @@ fn isFloat(comptime T: type) bool {
 /// True when `sub` has a floor to enforce: an unsigned type has one at zero, a
 /// signed integer and a float do not.
 fn hasFloor(comptime T: type) bool {
-    return @typeInfo(T).int.signedness == .unsigned;
+    return switch (@typeInfo(T)) {
+        .int => |info| info.signedness == .unsigned,
+        else => false,
+    };
 }
 
 fn isAtomicWidth(comptime bits: u16) bool {
     return bits == 8 or bits == 16 or bits == 32 or bits == 64;
 }
 
-test "both modes set, add, subtract, and read the same way" {
-    var plain: Int(i64) = .zero;
+test "a local and an atomic gauge agree step for step" {
+    var local: Local(i64) = .zero;
     var atomic: Atomic(i64) = .zero;
 
     const steps = [_]i64{ 1, 0, -7, 1000, -500, 42 };
     for (steps) |step| {
-        plain.add(step);
+        local.add(step);
         atomic.add(step);
-        try testing.expectEqual(plain.get(), atomic.get());
+        try testing.expectEqual(local.get(), atomic.get());
     }
 
-    plain.set(-5);
+    local.set(-5);
     atomic.set(-5);
-    try testing.expectEqual(@as(i64, -5), plain.get());
+    try testing.expectEqual(@as(i64, -5), local.get());
     try testing.expectEqual(@as(i64, -5), atomic.get());
 }
 
 test "subtracting to exactly zero is allowed" {
-    var plain: Int(u64) = .zero;
+    var local: Local(u64) = .zero;
     var atomic: Atomic(u64) = .zero;
-    plain.set(9);
+    local.set(9);
     atomic.set(9);
 
-    plain.sub(9);
+    local.sub(9);
     atomic.sub(9);
-    try testing.expectEqual(@as(u64, 0), plain.get());
+    try testing.expectEqual(@as(u64, 0), local.get());
     try testing.expectEqual(@as(u64, 0), atomic.get());
 
     // One more subtraction would be the underflow the assertion exists to
     // catch, so the test stops at the boundary rather than past it.
-    plain.set(1);
+    local.set(1);
     atomic.set(1);
-    plain.dec();
+    local.dec();
     atomic.dec();
-    try testing.expectEqual(@as(u64, 0), plain.get());
+    try testing.expectEqual(@as(u64, 0), local.get());
     try testing.expectEqual(@as(u64, 0), atomic.get());
 }
 
 test "a signed gauge goes negative" {
-    var plain: Int(i64) = .zero;
+    var local: Local(i64) = .zero;
     var atomic: Atomic(i64) = .zero;
 
-    plain.sub(1);
+    local.sub(1);
     atomic.sub(1);
-    try testing.expectEqual(@as(i64, -1), plain.get());
+    try testing.expectEqual(@as(i64, -1), local.get());
     try testing.expectEqual(@as(i64, -1), atomic.get());
 
-    plain.set(math.minInt(i64) + 1);
+    local.set(math.minInt(i64) + 1);
     atomic.set(math.minInt(i64) + 1);
-    plain.dec();
+    local.dec();
     atomic.dec();
-    try testing.expectEqual(@as(i64, math.minInt(i64)), plain.get());
+    try testing.expectEqual(@as(i64, math.minInt(i64)), local.get());
     try testing.expectEqual(@as(i64, math.minInt(i64)), atomic.get());
 }
 
 test "a float gauge reaches the writer as the number it holds" {
-    var depth: Float(f64) = .zero;
+    var depth: Local(f64) = .zero;
     depth.set(0.5);
     depth.add(1.0);
     depth.sub(0.25);
     try testing.expectEqual(@as(f64, 1.25), depth.get());
 
-    const metrics_writer = @import("root.zig").prometheus.Writer;
+    const Writer = @import("root.zig").prometheus.Writer;
     var buffer: [256]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
-    var w: metrics_writer = .init(&out);
+    var w: Writer = .init(&out);
     depth.set(1.5);
     try w.writeMetric("queue_depth_ratio", .{}, depth.get());
     try testing.expectEqualStrings("queue_depth_ratio 1.5\n", out.buffered());
@@ -301,8 +315,8 @@ test "an atomic float sums two adds through the loop" {
 }
 
 test "an atomic float converges under contention" {
-    // Four threads adding the same amount to one gauge: the CAS loop retries
-    // until every add lands, so the total is exact even though the adds race.
+    // Four threads adding the same amount to one gauge: the compare-exchange
+    // loop retries until every add lands, so the total is exact.
     const Worker = struct {
         fn run(gauge: *Atomic(f64)) void {
             for (0..1000) |_| gauge.add(1.0);
@@ -325,7 +339,7 @@ test "an atomic float subtracts and goes negative" {
 }
 
 test "the integer type is the gauge's, not the platform's" {
-    var byte: Int(u8) = .zero;
+    var byte: Local(u8) = .zero;
     byte.set(255);
     byte.add(1);
     try testing.expectEqual(@as(u8, 0), byte.get());
@@ -337,24 +351,23 @@ test "the integer type is the gauge's, not the platform's" {
 }
 
 test "a gauge is one word, in either mode" {
-    // The same claim a counter makes: it costs a word and adds no padding of
-    // its own, which a reader cannot see from the type.
-    try testing.expectEqual(@as(usize, 8), @sizeOf(Int(u64)));
+    // The claim a reader cannot see from the type: a gauge costs a word and
+    // adds no padding of its own, and an atomic float is no wider than an
+    // atomic integer.
+    try testing.expectEqual(@as(usize, 8), @sizeOf(Local(u64)));
     try testing.expectEqual(@as(usize, 8), @sizeOf(Atomic(u64)));
-    try testing.expectEqual(@as(usize, 8), @sizeOf(Float(f64)));
+    try testing.expectEqual(@as(usize, 8), @sizeOf(Local(f64)));
     try testing.expectEqual(@as(usize, 8), @sizeOf(Atomic(f64)));
-    try testing.expectEqual(@as(usize, 8), @alignOf(Int(u64)));
+    try testing.expectEqual(@as(usize, 8), @alignOf(Local(u64)));
     try testing.expectEqual(@as(usize, 8), @alignOf(Atomic(u64)));
 
-    // A gauge lands in space the struct already had.
     const Mixed = struct {
         a: u32,
         b: u32,
-        depth: Int(u64),
+        depth: Local(u64),
     };
     try testing.expectEqual(@as(usize, 16), @sizeOf(Mixed));
 
-    // A signed gauge and a float one are the same width as an unsigned one.
-    try testing.expectEqual(@sizeOf(Int(u64)), @sizeOf(Int(i64)));
-    try testing.expectEqual(@sizeOf(Int(u64)), @sizeOf(Float(f64)));
+    try testing.expectEqual(@sizeOf(Local(u64)), @sizeOf(Local(i64)));
+    try testing.expectEqual(@sizeOf(Local(u64)), @sizeOf(Local(f64)));
 }
