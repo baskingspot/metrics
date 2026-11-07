@@ -99,3 +99,47 @@ test "the storage is what the mode says" {
     try testing.expect(Counter(.plain).Storage == u64);
     try testing.expect(Counter(.atomic).Storage == std.atomic.Value(u64));
 }
+
+test "a counter is one word, in either mode" {
+    // Every consumer of this type is a counter next to other counters, so the
+    // claim that matters is that a counter costs a word and adds no padding of
+    // its own. That is not visible by reading the type.
+    try testing.expectEqual(@as(usize, 8), @sizeOf(Counter(.plain)));
+    try testing.expectEqual(@as(usize, 8), @sizeOf(Counter(.atomic)));
+    try testing.expectEqual(@as(usize, 8), @alignOf(Counter(.plain)));
+    try testing.expectEqual(@as(usize, 8), @alignOf(Counter(.atomic)));
+
+    // One counter beside a u64: two words. Field offsets in an auto-layout
+    // struct are the compiler's business, so the size is the claim here.
+    const Pair = struct { bytes: u64, errors: Counter(.plain) };
+    try testing.expectEqual(@as(usize, 16), @sizeOf(Pair));
+
+    // A block of counters beside two u64s, which is the shape a worker struct
+    // has: four words, no gap added by a counter.
+    const Worker = struct {
+        started: u64,
+        requests: Counter(.plain),
+        errors: Counter(.plain),
+        bytes: u64,
+    };
+    try testing.expectEqual(@as(usize, 32), @sizeOf(Worker));
+
+    // With two u32s ahead of them, counters fill the rest of the words rather
+    // than pushing the struct to another one.
+    const Mixed = struct {
+        a: u32,
+        b: u32,
+        errors: Counter(.plain),
+    };
+    try testing.expectEqual(@as(usize, 16), @sizeOf(Mixed));
+
+    // The atomic mode is the same size, so swapping the mode never moves a
+    // field or changes the layout of the struct that holds it.
+    const AtomicWorker = struct {
+        started: u64,
+        requests: Counter(.atomic),
+        errors: Counter(.atomic),
+        bytes: u64,
+    };
+    try testing.expectEqual(@sizeOf(Worker), @sizeOf(AtomicWorker));
+}
