@@ -2,8 +2,8 @@
 //! the concurrency model chosen where the counter is declared.
 //!
 //! `Local(T)` is one field and a `+%`. It belongs to whoever holds it, which is
-//! a worker thread or a struct the caller already owns. `Atomic(T)` is
-//! `std.atomic.Value(T)` with monotonic operations, for the case where a scrape
+//! a worker thread or a struct the caller already owns. `Atomic(T)` stores the
+//! same integer with monotonic atomic operations, for the case where a scrape
 //! reads a counter another thread is incrementing. The constructor names the
 //! storage and `T` names the value type.
 //!
@@ -15,20 +15,22 @@
 
 const std = @import("std");
 const testing = std.testing;
-const storage = @import("storage.zig");
 const math = std.math;
+const storage = @import("storage.zig");
 
-/// A counter whose field the caller owns, over a plain field. Only the owner
-/// writes it. `T` is the unsigned value type.
+/// A counter whose field the caller owns. Only the owner writes it.
+///
+/// The name says the storage; the argument says the value type. `Local(u64)` is
+/// a plain `u64` field; `Atomic(u32)` is an atomic `u32`.
 pub fn Local(comptime T: type) type {
     comptime checkUnsigned(T, "counter.Local");
-    return Counter(storage.Local(T));
+    return Counter(storage.Storage(.local, T));
 }
 
-/// A counter any thread may write and any thread may read, over an atomic.
+/// A counter any thread may write and any thread may read.
 pub fn Atomic(comptime T: type) type {
     comptime checkUnsigned(T, "counter.Atomic");
-    return Counter(storage.Atomic(T));
+    return Counter(storage.Storage(.atomic, T));
 }
 
 fn checkUnsigned(comptime T: type, comptime constructor: []const u8) void {

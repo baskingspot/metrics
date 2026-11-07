@@ -2,9 +2,9 @@
 //! the constructor and the value type by the argument.
 //!
 //! `Local(T)` is one field and belongs to whoever holds it, which is a worker
-//! thread or a struct the caller already owns. `Atomic(T)` is a
-//! `std.atomic.Value` with monotonic operations, for a gauge a scrape reads
-//! while another thread writes it.
+//! thread or a struct the caller already owns. `Atomic(T)` stores the same value
+//! with monotonic atomic operations, and a float as the integer of its bit
+//! pattern, for a gauge a scrape reads while another thread writes it.
 //!
 //! A gauge holds a temperature, a delta, a queue depth that dips below its last
 //! reading, so its integer may be signed and its float is `f32` or `f64`. The
@@ -20,17 +20,19 @@ const assert = std.debug.assert;
 const storage = @import("storage.zig");
 const Io = std.Io;
 
-/// A gauge whose field the caller owns, over a plain field. Only the owner
-/// writes it. `T` is an integer, an `f32`, or an `f64`.
+/// A gauge whose field the caller owns. Only the owner writes it.
+///
+/// The name says the storage; the argument says the value type. `Local(i64)` is
+/// an `i64` field, `Local(f64)` an `f64`, and `Atomic(u32)` an atomic `u32`.
 pub fn Local(comptime T: type) type {
     comptime checkNumber(T, "gauge.Local");
-    return Gauge(storage.Local(T));
+    return Gauge(storage.Storage(.local, T));
 }
 
-/// A gauge any thread may write and any thread may read, over an atomic.
+/// A gauge any thread may write and any thread may read: an integer or a float.
 pub fn Atomic(comptime T: type) type {
     comptime checkNumber(T, "gauge.Atomic");
-    return Gauge(storage.Atomic(T));
+    return Gauge(storage.Storage(.atomic, T));
 }
 
 fn checkNumber(comptime T: type, comptime constructor: []const u8) void {
@@ -63,7 +65,8 @@ fn Gauge(comptime S: type) type {
         /// covers it, so a debug build catches the dip below zero; a release
         /// build wraps, which shows up in the next scrape. Saturating would hide
         /// the bug at a flat line, the same way it would in a counter. The
-        /// observed value comes from the subtraction itself, so nothing races.
+        /// observed value comes back from the subtraction itself, so nothing
+        /// races.
         ///
         /// A signed integer has no such floor, and a float has neither a floor
         /// nor a wrap: going negative is the point.

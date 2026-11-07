@@ -30,5 +30,6 @@ pub const prometheus = struct {
 test {
     _ = @import("counter.zig");
     _ = @import("gauge.zig");
+    _ = @import("storage.zig");
     _ = writer;
 }

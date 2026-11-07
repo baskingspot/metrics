@@ -258,9 +258,9 @@ integer and an add, with the type and the concurrency model chosen where the
 counter is declared.
 
 `counter.Local(T)` is one field and a `+%`, for state that belongs to one thread
-or to a struct the caller already owns. `counter.Atomic(T)` is a
-`std.atomic.Value(T)` with monotonic operations, for a counter a scrape reads
-while another thread increments it.
+or to a struct the caller already owns. `counter.Atomic(T)` stores the same
+integer with monotonic atomic operations, for a counter a scrape reads while
+another thread increments it.
 
 ```zig
 {{ load_data(path = "examples/counter.zig", format = "plain") | trim_end }}
@@ -334,7 +334,7 @@ loop, not an `f64` field. None has appeared yet.
 
 ## A number that moves both ways
 
-`gauge.Local(T)` is a plain field; `gauge.Atomic(T)` is a `std.atomic.Value`.
+`gauge.Local(T)` is a plain field; `gauge.Atomic(T)` is an atomic of the same value.
 The constructor names the storage and `T` names the value type: `Local(i64)`,
 `Local(f64)`, `Atomic(u32)`. The difference from a counter is the method
 set and the type: a gauge has `set` and `sub`, its integer may be signed, and its

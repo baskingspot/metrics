@@ -1,161 +1,125 @@
-//! The storage a recording type sits on: one plain field, or an atomic.
+//! The storage a recording type sits on: one plain field, or one atomic.
 //!
-//! `Local(T)` is a plain field. `Atomic(T)` is an integer atomic for an integer,
-//! and for a float an integer atomic holding the bit pattern, because there is
-//! no atomic float add to call.
+//! `Storage(.local, T)` is a plain field. `Storage(.atomic, T)` is an atomic
+//! integer for an integer, and for a float an atomic unsigned integer of the
+//! same width holding the bit pattern, because there is no atomic float add to
+//! call.
 //!
 //! Both expose the same five operations over `Value = T`, so `counter` and
-//! `gauge` are thin wrappers and never branch on the mode. `sub` returns the
-//! value it replaced, which is what lets a gauge assert an underflow against the
-//! value the subtraction observed instead of loading first and racing.
+//! `gauge` never branch on the mode. `sub` returns the value it replaced, which
+//! is what lets a gauge assert an underflow against the value the subtraction
+//! observed instead of loading first and racing.
+//!
+//! Nothing here wraps `std.atomic.Value`: the builtins are the whole interface
+//! this needs, and `@atomicRmw` on the value type is a shorter path to the same
+//! bytes.
 
 const std = @import("std");
-const AtomicValue = std.atomic.Value;
+const testing = std.testing;
 const assert = std.debug.assert;
 
-/// A plain field.
-pub fn Local(comptime T: type) type {
-    comptime checkNumber(T, "storage.Local");
+pub const Mode = enum { local, atomic };
+
+pub fn Storage(comptime mode: Mode, comptime T: type) type {
+    comptime checkType(mode, T);
     return struct {
         const Self = @This();
+        const Field = FieldType(mode, T);
+        const Bits = switch (@typeInfo(T)) {
+            .float => BitsOf(T),
+            else => void,
+        };
 
         pub const Value = T;
 
-        value: T,
+        raw: Field,
 
-        pub inline fn load(self: *const Self) T {
-            return self.value;
+        pub inline fn load(self: *const Self) Value {
+            if (comptime mode == .local) {
+                return self.raw;
+            } else if (comptime isFloat(T)) {
+                return @bitCast(@atomicLoad(Bits, &self.raw, .monotonic));
+            } else {
+                return @atomicLoad(T, &self.raw, .monotonic);
+            }
         }
 
-        pub inline fn store(self: *Self, v: T) void {
-            self.value = v;
+        pub inline fn store(self: *Self, v: Value) void {
+            if (comptime mode == .local) {
+                self.raw = v;
+            } else if (comptime isFloat(T)) {
+                @atomicStore(Bits, &self.raw, @bitCast(v), .monotonic);
+            } else {
+                @atomicStore(T, &self.raw, v, .monotonic);
+            }
         }
 
         /// Add `n`, wrapping at the type's bounds.
-        pub inline fn add(self: *Self, n: T) void {
-            if (comptime isFloat(T)) {
-                self.value += n;
+        pub inline fn add(self: *Self, n: Value) void {
+            if (comptime mode == .local) {
+                if (comptime isFloat(T)) {
+                    self.raw += n;
+                } else {
+                    self.raw +%= n;
+                }
+            } else if (comptime isFloat(T)) {
+                _ = self.fetchAdd(n);
             } else {
-                self.value +%= n;
+                _ = @atomicRmw(T, &self.raw, .Add, n, .monotonic);
             }
         }
 
         /// Subtract `n`, wrapping at the type's bounds. Returns the value the
         /// subtraction replaced.
-        pub inline fn sub(self: *Self, n: T) T {
-            const previous = self.value;
-            if (comptime isFloat(T)) {
-                self.value -= n;
+        pub inline fn sub(self: *Self, n: Value) Value {
+            if (comptime mode == .local) {
+                const previous = self.raw;
+                if (comptime isFloat(T)) {
+                    self.raw -= n;
+                } else {
+                    self.raw = previous -% n;
+                }
+                return previous;
+            } else if (comptime isFloat(T)) {
+                return self.fetchAdd(-n);
             } else {
-                self.value = previous -% n;
+                return @atomicRmw(T, &self.raw, .Sub, n, .monotonic);
             }
-            return previous;
         }
 
-        pub const zero: Self = .{ .value = 0 };
-    };
-}
+        pub const zero: Self = .{ .raw = 0 };
 
-/// An integer atomic, or an atomic float stored as one.
-pub fn Atomic(comptime T: type) type {
-    comptime checkNumber(T, "storage.Atomic");
-    comptime if (isFloat(T)) {
-        if (floatBits(T) != 32 and floatBits(T) != 64) {
-            @compileError("metrics: storage.Atomic(" ++ @typeName(T) ++ ") has no atomic storage; use f32 or f64");
-        }
-    } else if (!isAtomicWidth(@typeInfo(T).int.bits)) {
-        @compileError("metrics: storage.Atomic(" ++ @typeName(T) ++
-            ") has no atomic storage; use 8, 16, 32, or 64 bits");
-    };
-    return if (isFloat(T)) AtomicFloat(T) else AtomicInteger(T);
-}
-
-fn AtomicInteger(comptime T: type) type {
-    return struct {
-        const Self = @This();
-
-        pub const Value = T;
-
-        value: AtomicValue(T),
-
-        pub inline fn load(self: *const Self) T {
-            return self.value.load(.monotonic);
-        }
-
-        pub inline fn store(self: *Self, v: T) void {
-            self.value.store(v, .monotonic);
-        }
-
-        pub inline fn add(self: *Self, n: T) void {
-            _ = self.value.fetchAdd(n, .monotonic);
-        }
-
-        /// Returns the value the subtraction replaced.
-        pub inline fn sub(self: *Self, n: T) T {
-            return self.value.fetchSub(n, .monotonic);
-        }
-
-        pub const zero: Self = .{ .value = .init(0) };
-    };
-}
-
-/// An atomic `f32` or `f64`. There is no atomic float add to call, so this is an
-/// integer atomic holding the bit pattern: `load` and `store` are a load and a
-/// store on it, and `add` and `sub` are a compare-exchange loop.
-fn AtomicFloat(comptime T: type) type {
-    comptime assert(isFloat(T));
-    return struct {
-        const Self = @This();
-        const Bits = BitsOf(T);
-
-        pub const Value = T;
-
-        value: AtomicValue(Bits),
-
-        pub inline fn load(self: *const Self) T {
-            return @bitCast(self.value.load(.monotonic));
-        }
-
-        pub inline fn store(self: *Self, v: T) void {
-            self.value.store(@bitCast(v), .monotonic);
-        }
-
-        pub inline fn add(self: *Self, n: T) void {
-            _ = self.fetchAdd(n);
-        }
-
-        /// Returns the value the subtraction replaced.
-        pub inline fn sub(self: *Self, n: T) T {
-            return self.fetchAdd(-n);
-        }
-
+        /// The compare-exchange loop an atomic float needs: load the bit
+        /// pattern, compute the next one, retry if another thread won the race.
         fn fetchAdd(self: *Self, n: T) T {
             // A no-op add does not need to contend for the line.
             if (n == 0) return self.load();
-            var current: Bits = self.value.load(.monotonic);
+            var current: Bits = @atomicLoad(Bits, &self.raw, .monotonic);
             while (true) {
                 const next: Bits = @bitCast(@as(T, @bitCast(current)) + n);
-                if (self.value.cmpxchgWeak(current, next, .monotonic, .monotonic)) |observed| {
+                if (@cmpxchgWeak(Bits, &self.raw, current, next, .monotonic, .monotonic)) |observed| {
                     current = observed;
                 } else return @bitCast(current);
             }
         }
-
-        pub const zero: Self = .{ .value = .init(0) };
     };
 }
 
-/// The integer an atomic float is stored in.
+/// The field the storage keeps: `T` itself when local, and for an atomic float
+/// the unsigned integer of the same width.
+fn FieldType(comptime mode: Mode, comptime T: type) type {
+    if (mode == .local) return T;
+    return if (isFloat(T)) BitsOf(T) else T;
+}
+
+/// The integer an atomic float is stored in: 32 bits for an `f32`, 64 for an
+/// `f64`.
 fn BitsOf(comptime T: type) type {
-    return switch (floatBits(T)) {
+    return switch (@typeInfo(T).float.bits) {
         32 => u32,
         64 => u64,
         else => @compileError("metrics: an atomic float is f32 or f64, not " ++ @typeName(T)),
     };
-}
-
-fn floatBits(comptime T: type) u16 {
-    return @typeInfo(T).float.bits;
 }
 
 pub fn isInteger(comptime T: type) bool {
@@ -170,12 +134,58 @@ pub fn isNumber(comptime T: type) bool {
     return isInteger(T) or isFloat(T);
 }
 
-fn checkNumber(comptime T: type, comptime constructor: []const u8) void {
-    if (comptime !isNumber(T)) {
-        @compileError("metrics: " ++ constructor ++ "(T) takes an integer, f32, or f64, not " ++ @typeName(T));
-    }
+fn checkType(comptime mode: Mode, comptime T: type) void {
+    comptime if (!isNumber(T)) {
+        @compileError("metrics: storage.Storage(T) takes an integer, f32, or f64, not " ++ @typeName(T));
+    };
+    comptime if (isFloat(T) and @typeInfo(T).float.bits != 32 and @typeInfo(T).float.bits != 64) {
+        @compileError("metrics: a gauge float is f32 or f64, not " ++ @typeName(T));
+    };
+    comptime if (mode == .atomic and isInteger(T) and !isAtomicWidth(@typeInfo(T).int.bits)) {
+        @compileError("metrics: storage.Storage(.atomic, " ++ @typeName(T) ++
+            ") has no atomic storage; use 8, 16, 32, or 64 bits");
+    };
 }
 
 fn isAtomicWidth(comptime bits: u16) bool {
     return bits == 8 or bits == 16 or bits == 32 or bits == 64;
+}
+
+test "a local and an atomic storage agree step for step" {
+    var local: Storage(.local, u64) = .zero;
+    var atomic: Storage(.atomic, u64) = .zero;
+
+    const steps = [_]u64{ 1, 0, 7, std.math.maxInt(u64), 3 };
+    for (steps) |step| {
+        local.add(step);
+        atomic.add(step);
+        try testing.expectEqual(local.load(), atomic.load());
+    }
+
+    // Subtracting nothing hands back the value it left in place.
+    const before = local.load();
+    try testing.expectEqual(before, local.sub(0));
+    try testing.expectEqual(before, atomic.sub(0));
+    try testing.expectEqual(local.load(), atomic.load());
+}
+
+test "sub returns the value it replaced" {
+    var local: Storage(.local, u32) = .{ .raw = 10 };
+    try testing.expectEqual(@as(u32, 10), local.sub(4));
+    try testing.expectEqual(@as(u32, 6), local.load());
+
+    var atomic: Storage(.atomic, u32) = .{ .raw = 10 };
+    try testing.expectEqual(@as(u32, 10), atomic.sub(4));
+    try testing.expectEqual(@as(u32, 6), atomic.load());
+}
+
+test "an atomic float is an integer atomic holding the bit pattern" {
+    var storage_value: Storage(.atomic, f64) = .zero;
+    storage_value.store(1.5);
+    try testing.expectEqual(@as(f64, 1.5), storage_value.load());
+    storage_value.add(2.25);
+    try testing.expectEqual(@as(f64, 3.75), storage_value.load());
+    try testing.expectEqual(@as(f64, 3.75), storage_value.sub(1.25));
+    try testing.expectEqual(@as(f64, 2.5), storage_value.load());
+    try testing.expectEqual(@as(usize, 8), @sizeOf(@TypeOf(storage_value.raw)));
 }
