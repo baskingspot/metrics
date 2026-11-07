@@ -37,7 +37,12 @@ fn Counter(comptime mode: Mode, comptime T: type) type {
         pub const concurrency = mode;
         pub const IntType = T;
 
-        count: Storage,
+        const Storage = switch (mode) {
+            .plain => T,
+            .atomic => Value(T),
+        };
+
+        value: Storage,
 
         /// One more. Wraps at `maxInt(T)`.
         pub inline fn inc(self: *Self) void {
@@ -47,8 +52,8 @@ fn Counter(comptime mode: Mode, comptime T: type) type {
         /// Add `n`. Wraps at `maxInt(T)`.
         pub inline fn add(self: *Self, n: T) void {
             switch (mode) {
-                .plain => self.count +%= n,
-                .atomic => _ = self.count.fetchAdd(n, .monotonic),
+                .plain => self.value +%= n,
+                .atomic => _ = self.value.fetchAdd(n, .monotonic),
             }
         }
 
@@ -56,18 +61,13 @@ fn Counter(comptime mode: Mode, comptime T: type) type {
         /// a scrape needs: it orders nothing else.
         pub inline fn get(self: *const Self) T {
             return switch (mode) {
-                .plain => self.count,
-                .atomic => self.count.load(.monotonic),
+                .plain => self.value,
+                .atomic => self.value.load(.monotonic),
             };
         }
 
-        const Storage = switch (mode) {
-            .plain => T,
-            .atomic => Value(T),
-        };
-
         /// A counter at zero. The way to make one: `Int(u64).zero`.
-        pub const zero: Self = .{ .count = switch (mode) {
+        pub const zero: Self = .{ .value = switch (mode) {
             .plain => 0,
             .atomic => .init(0),
         } };
