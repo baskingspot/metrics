@@ -57,7 +57,10 @@ its own `metrics` module binds this one as `metricsx`, by the org's `x` suffix:
 exe.root_module.addImport("metricsx", metrics.module("metrics"));
 ```
 
-Call sites then read `metricsx.prometheus.Writer`.
+Call sites then read `metricsx.prometheus.Writer`. A program that names the
+type in many signatures can bind `const Writer = metricsx.prometheus.Writer;`
+in its own file: the format namespace exists so several can sit side by side,
+and one file may prefer the shorter name.
 
 ## Pick a sink
 
