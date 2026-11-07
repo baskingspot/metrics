@@ -5,7 +5,7 @@ const metrics = @import("metrics");
 test "a fixed buffer, one line at a time" {
     var buffer: [1024]u8 = undefined;
     var out: std.Io.Writer = .fixed(&buffer);
-    var w: metrics.Writer = .init(&out);
+    var w: metrics.prometheus.Writer = .init(&out);
 
     try w.writeMetric("up", .{}, 1);
 
@@ -15,7 +15,7 @@ test "a fixed buffer, one line at a time" {
 test "an allocating writer grows a body you own" {
     var buffer: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer buffer.deinit();
-    var w: metrics.Writer = .init(&buffer.writer);
+    var w: metrics.prometheus.Writer = .init(&buffer.writer);
 
     try w.writeMetric("up", .{}, 1);
 

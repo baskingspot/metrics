@@ -46,7 +46,7 @@ const escape_labels = struct { k: []const u8 }{ .k = escape_text };
 
 const histogram_limits = [_]f64{ 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5 };
 const histogram_counts = [_]u64{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 40 };
-const histogram_metric: metrics.Metric = .{
+const histogram_metric: metrics.prometheus.Metric = .{
     .name = "bench_request_duration_seconds",
     .kind = .histogram,
     .help = "Benchmark histogram.",
@@ -76,7 +76,7 @@ fn benchmarkEscape(b: *testingx.B) !void {
 fn run(b: *testingx.B, labels: anytype) !void {
     var buffer: [64 * 1024]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
-    var w: metrics.Writer = .init(&out);
+    var w: metrics.prometheus.Writer = .init(&out);
 
     while (try b.loop()) {
         out.end = 0;
@@ -94,7 +94,7 @@ fn run(b: *testingx.B, labels: anytype) !void {
 fn benchmarkHistogram(b: *testingx.B) !void {
     var buffer: [64 * 1024]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
-    var w: metrics.Writer = .init(&out);
+    var w: metrics.prometheus.Writer = .init(&out);
 
     while (try b.loop()) {
         out.end = 0;

@@ -50,7 +50,14 @@ fetches nothing but the module.
 const metrics = @import("metrics");
 ```
 
-No std namespace is named `metrics`, so nothing needs an alias.
+No std namespace is named `metrics`, so nothing needs an alias. A program with
+its own `metrics` module binds this one as `metricsx`, by the org's `x` suffix:
+
+```zig
+exe.root_module.addImport("metricsx", metrics.module("metrics"));
+```
+
+Call sites then read `metricsx.prometheus.Writer`.
 
 ## Pick a sink
 
@@ -60,7 +67,7 @@ buffer holds the document with no allocation:
 ```zig
 var buffer: [4096]u8 = undefined;
 var out: std.Io.Writer = .fixed(&buffer);
-var w: metrics.Writer = .init(&out);
+var w: metrics.prometheus.Writer = .init(&out);
 ```
 
 `Writer` is the whole interface above the sink: it holds the `*std.Io.Writer`
@@ -226,10 +233,37 @@ primitives and gets the same values and escaping.
 
 ```zig
 var out: std.Io.Writer = .fixed(&buffer);
-var w: metrics.Writer = .init(&out);
+var w: metrics.prometheus.Writer = .init(&out);
 try w.name("custom_total", .{ .kind = "custom" });
 try w.value(@as(u64, 7));
 ```
+
+# Counters
+
+## A number and an add
+
+`Counter` is the recording side: a `u64` and an add, with the concurrency model
+chosen where the counter is declared. `Counter(.plain)` is one field and a `+%`,
+for state that belongs to one thread or to a struct the caller already owns.
+`Counter(.atomic)` is a `std.atomic.Value(u64)` with monotonic operations, for a
+counter a scrape reads while another thread increments it.
+
+```zig
+{{ load_data(path = "examples/counter.zig", format = "plain") | trim_end }}
+```
+
+## Wrapping, and no way to reset
+
+Both modes wrap at `maxInt(u64)` and keep counting. A counter that saturated
+would turn a visible reset into a silent flat line.
+
+There is no `set` and no write method: a counter only goes up, and the bytes are
+the writer's job. Read it with `get` and pass the number to `writeMetric`,
+`writeFamily`, or a histogram.
+
+Both modes are `u64`, and `get` is a monotonic load in the atomic case, which
+orders nothing else. A caller that needs a stronger ordering around its own data
+does that ordering itself.
 
 # Limits
 

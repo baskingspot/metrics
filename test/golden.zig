@@ -22,7 +22,7 @@ fn expect(comptime name: []const u8, actual: []const u8) !void {
 test "a labeled family" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
-    var w: metrics.Writer = .init(&out);
+    var w: metrics.prometheus.Writer = .init(&out);
     const family = try w.writeFamily(.{
         .name = "requests_total",
         .kind = .counter,
@@ -36,7 +36,7 @@ test "a labeled family" {
 test "an unlabeled family" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
-    var w: metrics.Writer = .init(&out);
+    var w: metrics.prometheus.Writer = .init(&out);
     const family = try w.writeFamily(.{
         .name = "up",
         .kind = .gauge,
@@ -49,7 +49,7 @@ test "an unlabeled family" {
 test "one line with no header" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
-    var w: metrics.Writer = .init(&out);
+    var w: metrics.prometheus.Writer = .init(&out);
     try w.writeMetric("up", .{}, 1);
     try expect("line_only.expected", out.buffered());
 }
@@ -57,7 +57,7 @@ test "one line with no header" {
 test "an integer label value" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
-    var w: metrics.Writer = .init(&out);
+    var w: metrics.prometheus.Writer = .init(&out);
     const family = try w.writeFamily(.{
         .name = "listener_port",
         .kind = .gauge,
@@ -69,7 +69,7 @@ test "an integer label value" {
 test "a label value escapes backslash quote and newline" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
-    var w: metrics.Writer = .init(&out);
+    var w: metrics.prometheus.Writer = .init(&out);
     const family = try w.writeFamily(.{
         .name = "worker_log",
         .kind = .counter,
@@ -81,7 +81,7 @@ test "a label value escapes backslash quote and newline" {
 test "HELP escapes a backslash and a newline, not a quote" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
-    var w: metrics.Writer = .init(&out);
+    var w: metrics.prometheus.Writer = .init(&out);
     const family = try w.writeFamily(.{
         .name = "escaped",
         .kind = .gauge,
@@ -94,7 +94,7 @@ test "HELP escapes a backslash and a newline, not a quote" {
 test "an empty HELP writes the line without text" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
-    var w: metrics.Writer = .init(&out);
+    var w: metrics.prometheus.Writer = .init(&out);
     const family = try w.writeFamily(.{ .name = "bare", .kind = .counter });
     try family.write(.{}, 0);
     try expect("empty_help.expected", out.buffered());
@@ -103,7 +103,7 @@ test "an empty HELP writes the line without text" {
 test "three families in one document" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
-    var w: metrics.Writer = .init(&out);
+    var w: metrics.prometheus.Writer = .init(&out);
 
     const first = try w.writeFamily(.{
         .name = "first_total",
@@ -125,7 +125,7 @@ test "three families in one document" {
 test "a histogram with one bucket" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
-    var w: metrics.Writer = .init(&out);
+    var w: metrics.prometheus.Writer = .init(&out);
     try w.writeHistogram(
         .{ .name = "latency_seconds", .kind = .histogram },
         .{},
@@ -140,7 +140,7 @@ test "a histogram with one bucket" {
 test "a histogram with only the implicit bucket" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
-    var w: metrics.Writer = .init(&out);
+    var w: metrics.prometheus.Writer = .init(&out);
     try w.writeHistogram(
         .{ .name = "latency_seconds", .kind = .histogram },
         .{},
@@ -157,7 +157,7 @@ test "a histogram with only the implicit bucket" {
 test "a histogram with a tail above its top limit" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
-    var w: metrics.Writer = .init(&out);
+    var w: metrics.prometheus.Writer = .init(&out);
     try w.writeHistogram(
         .{ .name = "latency_seconds", .kind = .histogram },
         .{},
@@ -172,7 +172,7 @@ test "a histogram with a tail above its top limit" {
 test "le uses the same formatter as a sample value" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
-    var w: metrics.Writer = .init(&out);
+    var w: metrics.prometheus.Writer = .init(&out);
     try w.writeHistogram(
         .{ .name = "latency_seconds", .kind = .histogram },
         .{ .method = "GET" },
@@ -199,7 +199,7 @@ test "a histogram with thirty limits" {
     };
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
-    var w: metrics.Writer = .init(&out);
+    var w: metrics.prometheus.Writer = .init(&out);
     try w.writeHistogram(
         .{ .name = "latency_seconds", .kind = .histogram },
         .{},
@@ -217,7 +217,7 @@ test "a histogram with thirty limits" {
 test "a series with no limits is one +Inf bucket" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
-    var w: metrics.Writer = .init(&out);
+    var w: metrics.prometheus.Writer = .init(&out);
     const family = try w.writeFamily(.{ .name = "latency_seconds", .kind = .histogram });
     try family.writeHistogramSeries(.{}, &.{}, &[_]u64{}, 1.25, 7);
     try expect("histogram_inf_only.expected", out.buffered());
@@ -226,7 +226,7 @@ test "a series with no limits is one +Inf bucket" {
 test "a histogram family with two series writes one header" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
-    var w: metrics.Writer = .init(&out);
+    var w: metrics.prometheus.Writer = .init(&out);
 
     const family = try w.writeFamily(.{
         .name = "message_size",
@@ -243,7 +243,7 @@ test "a histogram family with two series writes one header" {
 test "a histogram sum wider than f64" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
-    var w: metrics.Writer = .init(&out);
+    var w: metrics.prometheus.Writer = .init(&out);
     try w.writeHistogram(
         .{ .name = "message_size", .kind = .histogram },
         .{},
@@ -258,7 +258,7 @@ test "a histogram sum wider than f64" {
 test "the value table" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
-    var w: metrics.Writer = .init(&out);
+    var w: metrics.prometheus.Writer = .init(&out);
     const family = try w.writeFamily(.{ .name = "values", .kind = .untyped });
     const cases = [_]struct { name: []const u8, value: f64 }{
         .{ .name = "one_tenth", .value = 0.1 },
@@ -287,7 +287,7 @@ test "the value table" {
 test "an integer keeps every digit" {
     var buffer: [document_size]u8 = undefined;
     var out: Io.Writer = .fixed(&buffer);
-    var w: metrics.Writer = .init(&out);
+    var w: metrics.prometheus.Writer = .init(&out);
     const family = try w.writeFamily(.{ .name = "counters", .kind = .untyped });
     try family.write(.{ .case = "u64_max" }, std.math.maxInt(u64));
     try family.write(.{ .case = "above_2_53" }, 9007199254740993);
@@ -320,7 +320,7 @@ test "property: a histogram document keeps every bucket invariant" {
 
         var buffer: [document_size]u8 = undefined;
         var out: Io.Writer = .fixed(&buffer);
-        var w: metrics.Writer = .init(&out);
+        var w: metrics.prometheus.Writer = .init(&out);
         try w.writeHistogram(
             .{ .name = "h", .kind = .histogram },
             .{ .k = "v" },

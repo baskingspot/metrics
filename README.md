@@ -16,7 +16,7 @@ escaping around them, to any `std.Io.Writer`.
 ```zig
 var buffer: [4096]u8 = undefined;
 var out: std.Io.Writer = .fixed(&buffer);
-var w: metrics.Writer = .init(&out);
+var w: metrics.prometheus.Writer = .init(&out);
 
 const requests = try w.writeFamily(.{
     .name = "http_requests_total",
@@ -41,12 +41,13 @@ The API is pre-1.0: pin the commit, and expect it to move.
 - [Histograms](https://baskingspot.dev/metrics/#histograms): `Writer.writeHistogram` takes the caller's limits and cumulative counts and writes `_bucket`, `_sum`, and `_count`, `le` included.
 - [Values and escaping](https://baskingspot.dev/metrics/#values-and-escaping): a float that reads back as an integer is written as one, and the three bytes that need escaping are escaped.
 - [The primitives](https://baskingspot.dev/metrics/#the-primitives): `Writer` writes one record at a time, and every composition above it is built from those methods.
+- [Counters](https://baskingspot.dev/metrics/#counters): `Counter(.plain)` and `Counter(.atomic)` are a `u64` and an add, wrapping, with no way to reset.
 
 Not implemented:
 
 - HTTP. There is no listener, no handler, no `Content-Type` constant, and no status code. Wrap a `std.Io.Writer`.
 - Ordering, family uniqueness, and a document model.
-- Counters and gauges. A counter is a `u64` and an add, and the concurrency model around it is the application's decision.
+- Gauges and `set`. A counter only goes up, and a gauge is a number its owner assigns.
 - A registry, global state, or a `var` of any kind.
 - Validation of a histogram's counters beyond the length.
 - OpenMetrics 1.0, exemplars, `_created` series, and native histograms.
@@ -65,8 +66,9 @@ const metrics = b.dependency("metrics", .{ .target = target, .optimize = optimiz
 exe.root_module.addImport("metrics", metrics.module("metrics"));
 ```
 
-No std namespace is named `metrics`, so nothing needs an alias. `metrics`
-builds with Zig 0.16 and 0.17. It has one dependency, `testingx`, marked lazy
+No std namespace is named `metrics`, so nothing needs an alias. A program with
+its own `metrics` module binds this one as `metricsx`, and call sites read
+`metricsx.prometheus.Writer`. `metrics` builds with Zig 0.16 and 0.17. It has one dependency, `testingx`, marked lazy
 and used only after `build.zig` returns for a consumer, so a consumer's fetch
 graph is the module and nothing else.
 
