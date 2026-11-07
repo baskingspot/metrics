@@ -253,11 +253,14 @@ try w.value(@as(u64, 7));
 
 ## A number and an add
 
-`counter.Int(T)` is the recording side: an unsigned integer and an add, with the type
-and the concurrency model chosen where the counter is declared. `counter.Int(T)` is one
-field and a `+%`, for state that belongs to one thread or to a struct the caller
-already owns. `Atomic(T)` is a `std.atomic.Value(T)` with monotonic operations,
-for a counter a scrape reads while another thread increments it.
+`counter.Int(T)` and `counter.Atomic(T)` are the recording side: an unsigned
+integer and an add, with the type and the concurrency model chosen where the
+counter is declared.
+
+`counter.Int(T)` is one field and a `+%`, for state that belongs to one thread
+or to a struct the caller already owns. `counter.Atomic(T)` is a
+`std.atomic.Value(T)` with monotonic operations, for a counter a scrape reads
+while another thread increments it.
 
 ```zig
 {{ load_data(path = "examples/counter.zig", format = "plain") | trim_end }}
@@ -272,11 +275,37 @@ There is no `set` and no write method: a counter only goes up, and the bytes are
 the writer's job. Read it with `get` and pass the number to `writeMetric`,
 `writeFamily`, or a histogram.
 
-`T` is whatever unsigned integer the counter should be: `u8` for a flag-like
-count, `u32` where a word is enough, `u64` by default. `Atomic(T)` needs 8, 16,
+`T` is the unsigned integer the counter should be: `u8` for a flag-like count,
+`u32` where a word is enough, `u64` by default. `counter.Atomic(T)` needs 8, 16,
 32, or 64 bits, which is what the platform can increment atomically. `get` is a
-monotonic load in the atomic case, which orders nothing else. A caller that needs a stronger ordering around its own data
-does that ordering itself.
+monotonic load in the atomic case, which orders nothing else; a caller that
+needs a stronger ordering around its own data does that ordering itself.
+
+## Where the name and the help text go
+
+A counter is storage. It carries no name and no help, because those belong to
+the family: the family is what a scraper documents and what a linter can check
+for a missing description.
+
+```zig
+const families = struct {
+    pub const requests = metrics.prometheus.Metric{
+        .name = "http_requests_total",
+        .kind = .counter,
+        .help = "Requests served, by method and status.",
+    };
+};
+
+var requests: metrics.counter.Int(u64) = .zero;
+
+// where the document is written
+const family = try w.writeFamily(families.requests);
+try family.write(.{ .method = "GET" }, requests.get());
+```
+
+Both of those lines are optional. `# HELP` and `# TYPE` exist for scrapers that
+read them; a caller writing samples alone through `writeMetric` pays nothing for
+them, and some backends ignore them entirely.
 
 # Limits
 
