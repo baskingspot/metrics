@@ -1,5 +1,5 @@
-//! Prometheus text exposition format for Zig: write metrics to any writer, no
-//! HTTP.
+//! Metrics for Zig: recording primitives, and an exposition writer per format.
+//! No HTTP.
 //!
 //! `prometheus.Writer` is the format: primitives (`help`, `kind`, `name`,
 //! `value`, `line`) and the compositions built on them (`writeMetric`,
