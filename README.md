@@ -42,7 +42,7 @@ The API is pre-1.0: pin the commit, and expect it to move.
 - [Values and escaping](https://baskingspot.dev/metrics/#values-and-escaping): a float that reads back as an integer is written as one, and the three bytes that need escaping are escaped.
 - [The primitives](https://baskingspot.dev/metrics/#the-primitives): `Writer` writes one record at a time, and every composition above it is built from those methods.
 - [Counters](https://baskingspot.dev/metrics/#counters): `counter.Int(T)` and `counter.Atomic(T)` are an unsigned integer and an add, wrapping, with no way to reset.
-- [Gauges](https://baskingspot.dev/metrics/#gauges): `gauge.Int(T)` and `gauge.Atomic(T)` are a number with `set`, `add`, `sub`, `inc`, `dec`, and `get`; the integer may be signed.
+- [Gauges](https://baskingspot.dev/metrics/#gauges): `gauge.Int(T)`, `gauge.Float(T)`, and `gauge.Atomic(T)` are a number with `set`, `add`, `sub`, `inc`, `dec`, and `get`; the integer may be signed and the float is `f32` or `f64`.
 
 Not implemented:
 

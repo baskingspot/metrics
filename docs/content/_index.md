@@ -307,20 +307,55 @@ Both of those lines are optional. `# HELP` and `# TYPE` exist for scrapers that
 read them; a caller writing samples alone through `writeMetric` pays nothing for
 them, and some backends ignore them entirely.
 
+## Accumulate in the smallest exact unit
+
+A counter is an integer, so a duration or a ratio is recorded in the unit that is
+exact rather than the unit that is convenient. Accumulate nanoseconds and divide
+at the write site:
+
+```zig
+try w.writeMetric("process_cpu_seconds_total", .{}, cpu_nanos.get() / 1e9);
+```
+
+`counter.Int(u64)` of nanoseconds is exact and branch-free, and the division
+happens once per scrape. An `f64` accumulator of seconds stops being exact the
+moment the total passes 2^53 nanoseconds, which is about 104 days of process
+time: inside the lifetime of a busy service, and the digits are gone silently.
+
+The same reasoning covers any "total time spent" accumulator, and cents rather
+than dollars for money. A histogram's `_sum` is not a counter series at all: it
+sums in the observed type, which `writeHistogram` takes as `anytype`.
+
+If a genuine case appears where a delta arrives fractional and cannot be scaled,
+the design to reach for is a contended float accumulator with a compare-exchange
+loop, not an `f64` field. None has appeared yet.
+
 # Gauges
 
 ## A number that moves both ways
 
-`gauge.Int(T)` is a plain field and `gauge.Atomic(T)` is `std.atomic.Value(T)`,
-the same split a counter makes. The difference is the method set and the type: a
-gauge has `set` and `sub`, and its integer may be signed, because a gauge holds a
-temperature, a delta, or a queue depth that dips below its last reading.
+`gauge.Int(T)` and `gauge.Float(T)` are plain fields; `gauge.Atomic(T)` is a
+`std.atomic.Value` and takes either. The difference from a counter is the method
+set and the type: a gauge has `set` and `sub`, its integer may be signed, and its
+float is `f32` or `f64`, because a gauge holds a temperature, a ratio, or a queue
+depth that dips below its last reading.
 
 ```zig
 {{ load_data(path = "examples/gauge.zig", format = "plain") | trim_end }}
 ```
 
 `set`, `add`, `sub`, `inc`, `dec`, and `get`, with `zero` to make one.
+
+## Atomic floats
+
+An atomic float is an integer atomic holding the bit pattern. `set` and `get`
+are a store and a load on that integer; `add` and `sub` are a compare-exchange
+loop, because there is no atomic float add to call. The loop returns early for a
+zero add, so a no-op does not contend for the line.
+
+The loop is what keeps a contended gauge correct: four threads adding to one
+`Atomic(f64)` produce the exact total, which is what the contention test in the
+source asserts.
 
 ## Subtraction, and the floor an unsigned gauge has
 
