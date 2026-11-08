@@ -32,8 +32,8 @@ test "record observations, then write the series" {
     histogram.observe(2048);
     histogram.observe(1 << 21);
 
-    var counts_buffer: [2]u64 = undefined;
-    histogram.counts(&counts_buffer);
+    var snap: @TypeOf(histogram).Snapshot = undefined;
+    histogram.snapshot(&snap);
 
     var buffer: [4096]u8 = undefined;
     var out: std.Io.Writer = .fixed(&buffer);
@@ -42,9 +42,9 @@ test "record observations, then write the series" {
         .{ .name = "message_size_bytes", .kind = .histogram },
         .{ .direction = "inbound" },
         &.{ 1024, 1 << 20 },
-        &counts_buffer,
-        histogram.sumValue(),
-        histogram.count(),
+        &snap.buckets,
+        snap.total,
+        snap.observed,
     );
 
     try std.testing.expectEqualStrings(
