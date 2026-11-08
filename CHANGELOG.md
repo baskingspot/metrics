@@ -5,6 +5,8 @@ All notable changes to metrics are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-08
+
 ### Added
 
 - `histogram.Fixed(S, bounds)`: a bucket array, a count, and a sum over the caller's recording counter type, with `observe`, `count`, `sumValue`, and `counts`. Buckets are cumulative at observe, the sum is exact because the slot is an integer counter, and the bounds are comptime.
