@@ -33,7 +33,7 @@ test "record observations, then write the series" {
     histogram.observe(1 << 21);
 
     var counts_buffer: [2]u64 = undefined;
-    const counts = histogram.counts(&counts_buffer);
+    histogram.counts(&counts_buffer);
 
     var buffer: [4096]u8 = undefined;
     var out: std.Io.Writer = .fixed(&buffer);
@@ -42,7 +42,7 @@ test "record observations, then write the series" {
         .{ .name = "message_size_bytes", .kind = .histogram },
         .{ .direction = "inbound" },
         &.{ 1024, 1 << 20 },
-        counts,
+        &counts_buffer,
         histogram.sumValue(),
         histogram.count(),
     );

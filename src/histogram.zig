@@ -29,6 +29,7 @@ pub fn Fixed(comptime S: type, comptime bounds: []const f64) type {
 
         pub const Bounds = bounds;
         pub const Slot = S;
+        pub const Counts = [bounds.len]u64;
 
         buckets: [bounds.len]S,
         observed: S,
@@ -60,11 +61,10 @@ pub fn Fixed(comptime S: type, comptime bounds: []const f64) type {
         }
 
         /// Fill `out` from the slots and hand back the slice. The caller owns
-        /// the storage: `[bounds.len]u64` on the stack, no allocation, and the
+        /// the storage: `Counts` on the stack, no allocation, and the
         /// result goes straight to `writeHistogramSeries`.
-        pub fn counts(self: *const Self, out: *[bounds.len]u64) []const u64 {
+        pub fn counts(self: *const Self, out: *Counts) void {
             inline for (0..bounds.len) |i| out[i] = self.buckets[i].get();
-            return out;
         }
 
         /// A histogram with nothing observed.
@@ -106,7 +106,8 @@ test "a value on a bound lands in that bucket and every one above it" {
     histogram.observe(10);
 
     var buffer: [2]u64 = undefined;
-    try testing.expectEqualSlices(u64, &.{ 1, 1 }, histogram.counts(&buffer));
+    histogram.counts(&buffer);
+    try testing.expectEqualSlices(u64, &.{ 1, 1 }, &buffer);
     try testing.expectEqual(@as(u64, 1), histogram.count());
     try testing.expectEqual(@as(u64, 10), histogram.sumValue());
 }
@@ -116,7 +117,8 @@ test "a value above the largest bound increments only the count" {
     histogram.observe(101);
 
     var buffer: [2]u64 = undefined;
-    try testing.expectEqualSlices(u64, &.{ 0, 0 }, histogram.counts(&buffer));
+    histogram.counts(&buffer);
+    try testing.expectEqualSlices(u64, &.{ 0, 0 }, &buffer);
     try testing.expectEqual(@as(u64, 1), histogram.count());
     try testing.expectEqual(@as(u64, 101), histogram.sumValue());
 }
@@ -128,7 +130,8 @@ test "the top bucket and the count agree when nothing overflows it" {
     histogram.observe(100);
 
     var buffer: [2]u64 = undefined;
-    const counts = histogram.counts(&buffer);
+    histogram.counts(&buffer);
+    const counts = &buffer;
     try testing.expectEqual(@as(u64, 3), counts[counts.len - 1]);
     try testing.expectEqual(histogram.count(), counts[counts.len - 1]);
 }
@@ -147,7 +150,8 @@ test "empty bounds are legal and keep only the count" {
     histogram.observe(9);
 
     var buffer: [0]u64 = undefined;
-    try testing.expectEqual(@as(usize, 0), histogram.counts(&buffer).len);
+    histogram.counts(&buffer);
+    try testing.expectEqual(@as(usize, 0), buffer.len);
     try testing.expectEqual(@as(u64, 2), histogram.count());
     try testing.expectEqual(@as(u64, 16), histogram.sumValue());
 }
@@ -168,7 +172,9 @@ test "both slot types agree step for step" {
 
     var atomic_counts: [bounds.len]u64 = undefined;
     var local_counts: [bounds.len]u64 = undefined;
-    try testing.expectEqualSlices(u64, local.counts(&local_counts), atomic.counts(&atomic_counts));
+    local.counts(&local_counts);
+    atomic.counts(&atomic_counts);
+    try testing.expectEqualSlices(u64, &local_counts, &atomic_counts);
     try testing.expectEqual(local.count(), atomic.count());
     try testing.expectEqual(local.sumValue(), atomic.sumValue());
 }
