@@ -7,6 +7,10 @@ All notable changes to metrics are recorded here. The format follows
 
 ### Added
 
+- `histogram.Fixed(S, bounds)`: a bucket array, a count, and a sum over the caller's recording counter type, with `observe`, `count`, `sumValue`, and `counts`. Buckets are cumulative at observe, the sum is exact because the slot is an integer counter, and bounds are comptime.
+
+### Added
+
 - `gauge.Local(T)` and `gauge.Atomic(T)`: a number that moves both ways, with `set`, `add`, `sub`, `inc`, `dec`, `get`, and `zero` to make one. The integer may be signed and the float is `f32` or `f64`. An unsigned `sub` asserts in debug and wraps in release; an atomic float is an integer atomic holding the bit pattern, added through a compare-exchange loop.
 
 ### Added

@@ -180,6 +180,35 @@ try family.writeHistogramSeries(.{ .direction = "outbound" }, &.{1024}, &[_]u64{
 loses everything above 2^53. A float is formatted the way `writeMetric`
 formats one.
 
+## Record into one
+
+`histogram.Fixed(S, bounds)` is the recording side: a bucket array, a count, and
+a sum, each slot the same recording counter type, so one argument decides
+atomicity for all of them.
+
+```zig
+{{ load_data(path = "examples/histogram.zig", format = "plain") | trim_end }}
+```
+
+`observe(v)` walks the bounds at comptime and increments every bucket whose
+bound is at or above `v`, so the counts are cumulative at observe and
+`counts(&buffer)` is already what `writeHistogramSeries` wants. The buffer is
+`[bounds.len]u64` on the stack: nothing here allocates, and nothing keeps a
+pointer past the call.
+
+`S` is `counter.Atomic(u64)` for a scrape that reads while workers observe, and
+`counter.Local(u64)` for a histogram one thread owns. The sum is exact because
+the slot's value type is `u64`, not a float, so nothing loses digits above 2^53.
+
+Observations are `u64`, and microseconds stand in for seconds the way the
+counter accumulates nanoseconds: one unit that is exact, converted at the write
+site.
+
+Bounds are `f64` and observations are `u64`, so the comparison converts the
+observation with `@floatFromInt`. That is exact below 2^53, which is nine
+petabytes of bytes or 104 days of microseconds, and approximate above it. Empty
+bounds are legal and produce a single `+Inf` bucket.
+
 ## What is checked, and what is not
 
 A length mismatch between `limits` and `counts` is a caller bug caught by a

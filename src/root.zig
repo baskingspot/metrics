@@ -14,9 +14,11 @@
 const writer = @import("writer.zig");
 
 /// Recording types. `counter.Local(u64)` holds a number that only goes up;
-/// `gauge.Local(i64)` holds one that moves both ways. The constructor names the
-/// storage and the argument names the value type.
+/// `gauge.Local(i64)` holds one that moves both ways; `histogram.Fixed(S, bounds)`
+/// holds a bucket array, a count, and a sum over the caller's counter type. The
+/// constructor names the storage and the argument names the value type.
 pub const counter = @import("counter.zig");
+pub const histogram = @import("histogram.zig");
 pub const gauge = @import("gauge.zig");
 
 /// The Prometheus text exposition format.
@@ -29,6 +31,7 @@ pub const prometheus = struct {
 
 test {
     _ = @import("counter.zig");
+    _ = @import("histogram.zig");
     _ = @import("gauge.zig");
     _ = @import("storage.zig");
     _ = writer;

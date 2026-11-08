@@ -38,7 +38,7 @@ The API is pre-1.0: pin the commit, and expect it to move.
 
 - [Samples](https://baskingspot.dev/metrics/#samples): `Writer.writeMetric` writes one line, and labels come from a struct's field names, so an illegal label name does not compile.
 - [Families](https://baskingspot.dev/metrics/#families): `Writer.writeFamily` writes `# HELP` and `# TYPE` and returns the handle its samples go through.
-- [Histograms](https://baskingspot.dev/metrics/#histograms): `Writer.writeHistogram` takes the caller's limits and cumulative counts and writes `_bucket`, `_sum`, and `_count`, `le` included.
+- [Histograms](https://baskingspot.dev/metrics/#histograms): `Writer.writeHistogram` writes `_bucket`, `_sum`, and `_count` from the caller's cumulative counts, and `histogram.Fixed(S, bounds)` records the observations into counters the caller owns.
 - [Values and escaping](https://baskingspot.dev/metrics/#values-and-escaping): a float that reads back as an integer is written as one, and the three bytes that need escaping are escaped.
 - [The primitives](https://baskingspot.dev/metrics/#the-primitives): `Writer` writes one record at a time, and every composition above it is built from those methods.
 - [Counters](https://baskingspot.dev/metrics/#counters): `counter.Local(T)` and `counter.Atomic(T)` are an unsigned integer and an add, wrapping, with no way to reset.

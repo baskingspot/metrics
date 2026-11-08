@@ -24,3 +24,37 @@ test "a histogram family from the caller's cumulative counts" {
         \\
     , out.buffered());
 }
+
+test "record observations, then write the series" {
+    const S = metrics.counter.Atomic(u64);
+    var histogram: metrics.histogram.Fixed(S, &.{ 1024, 1 << 20 }) = .zero;
+    histogram.observe(512);
+    histogram.observe(2048);
+    histogram.observe(1 << 21);
+
+    var counts_buffer: [2]u64 = undefined;
+    const counts = histogram.counts(&counts_buffer);
+
+    var buffer: [4096]u8 = undefined;
+    var out: std.Io.Writer = .fixed(&buffer);
+    var w: metrics.prometheus.Writer = .init(&out);
+    try w.writeHistogram(
+        .{ .name = "message_size_bytes", .kind = .histogram },
+        .{ .direction = "inbound" },
+        &.{ 1024, 1 << 20 },
+        counts,
+        histogram.sumValue(),
+        histogram.count(),
+    );
+
+    try std.testing.expectEqualStrings(
+        \\# HELP message_size_bytes
+        \\# TYPE message_size_bytes histogram
+        \\message_size_bytes_bucket{direction="inbound",le="1024"} 1
+        \\message_size_bytes_bucket{direction="inbound",le="1048576"} 2
+        \\message_size_bytes_bucket{direction="inbound",le="+Inf"} 3
+        \\message_size_bytes_sum{direction="inbound"} 2099712
+        \\message_size_bytes_count{direction="inbound"} 3
+        \\
+    , out.buffered());
+}
