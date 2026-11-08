@@ -95,6 +95,30 @@ pub fn Fixed(comptime S: type, comptime bounds: []const f64) type {
     };
 }
 
+/// `count` bounds from `start`, each `width` above the one before, for
+/// `Fixed(S, &histogram.linear(1, 10, 5))`. The `+Inf` bucket is implicit, so
+/// `count` is the finite buckets only.
+pub fn linear(comptime start: f64, comptime width: f64, comptime count: usize) [count]f64 {
+    var bounds: [count]f64 = undefined;
+    for (0..count) |i| {
+        const step: f64 = @floatFromInt(i);
+        bounds[i] = start + width * step;
+    }
+    return bounds;
+}
+
+/// `count` bounds from `start`, each one `factor` times the last, for
+/// `Fixed(S, &histogram.exponential(1, 2, 10))`. Same implicit `+Inf`.
+pub fn exponential(comptime start: f64, comptime factor: f64, comptime count: usize) [count]f64 {
+    var bounds: [count]f64 = undefined;
+    var bound = start;
+    for (0..count) |i| {
+        bounds[i] = bound;
+        bound *= factor;
+    }
+    return bounds;
+}
+
 fn checkType(comptime S: type) void {
     comptime if (!@hasDecl(S, "zero") or !@hasDecl(S, "inc") or !@hasDecl(S, "get")) {
         @compileError("metrics: histogram.Fixed's slot is a recording counter type, not " ++ @typeName(S));
@@ -205,4 +229,21 @@ test "both slot types agree step for step" {
     try testing.expectEqualSlices(u64, &snap.buckets, local.counts());
     try testing.expectEqual(snap.observed, local.observed.get());
     try testing.expectEqual(snap.total, local.total.get());
+}
+
+test "linear bounds step by width" {
+    const bounds = linear(1, 10, 4);
+    try testing.expectEqualSlices(f64, &.{ 1, 11, 21, 31 }, &bounds);
+}
+
+test "exponential bounds multiply by the factor" {
+    const bounds = exponential(1, 2, 4);
+    try testing.expectEqualSlices(f64, &.{ 1, 2, 4, 8 }, &bounds);
+}
+
+test "a histogram takes generated bounds" {
+    const Histogram = Fixed(counter.Local(u64), &linear(1, 10, 3));
+    var histogram: Histogram = .zero;
+    histogram.observe(5);
+    try testing.expectEqualSlices(u64, &.{ 0, 1, 1 }, histogram.counts());
 }

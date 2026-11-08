@@ -206,6 +206,10 @@ Observations are `u64`, and microseconds stand in for seconds the way the
 counter accumulates nanoseconds: one unit that is exact, converted at the write
 site.
 
+Bounds can be spelled out or generated at comptime: `&histogram.linear(1, 10, 5)`
+gives five bounds ten apart, and `&histogram.exponential(1, 2, 10)` gives ten
+doubling from one. Neither counts the `+Inf` bucket, which is implicit.
+
 Bounds are `f64` and observations are `u64`, so the comparison converts the
 observation with `@floatFromInt`. That is exact below 2^53, which is nine
 petabytes of bytes or 104 days of microseconds, and approximate above it. Empty
