@@ -20,7 +20,7 @@ const Io = std.Io;
 const assert = std.debug.assert;
 const testing = std.testing;
 
-const compat = @import("compat.zig");
+const compat = @import("../compat.zig");
 const escaping = @import("escape.zig");
 const names = @import("name.zig");
 const values = @import("value.zig");
@@ -48,7 +48,7 @@ pub const Writer = struct {
 
     /// `# HELP name text`, with the text escaped. An empty text writes the line
     /// without a trailing space.
-    pub fn help(self: Writer, comptime metric_name: []const u8, text: []const u8) Io.Writer.Error!void {
+    pub fn help(self: *const Writer, comptime metric_name: []const u8, text: []const u8) Io.Writer.Error!void {
         comptime checkName(metric_name);
         try self.out.writeAll("# HELP ");
         try self.out.writeAll(metric_name);
@@ -60,7 +60,7 @@ pub const Writer = struct {
     }
 
     /// `# TYPE name kind`.
-    pub fn kind(self: Writer, comptime metric_name: []const u8, type_kind: Kind) Io.Writer.Error!void {
+    pub fn kind(self: *const Writer, comptime metric_name: []const u8, type_kind: Kind) Io.Writer.Error!void {
         comptime checkName(metric_name);
         try self.out.writeAll("# TYPE ");
         try self.out.writeAll(metric_name);
@@ -72,7 +72,7 @@ pub const Writer = struct {
     /// `name{label="value",...}` with no trailing space. A struct gives its
     /// fields in order; a tuple of structs gives their fields in sequence, which
     /// is how a caller adds a label of its own to one it already has.
-    pub fn name(self: Writer, comptime name_text: []const u8, labels: anytype) Io.Writer.Error!void {
+    pub fn name(self: *const Writer, comptime name_text: []const u8, labels: anytype) Io.Writer.Error!void {
         comptime checkName(name_text);
         try self.out.writeAll(name_text);
         if (comptime labelCount(@TypeOf(labels)) == 0) return;
@@ -83,7 +83,7 @@ pub const Writer = struct {
 
     /// ` value` and the newline that ends the record. An integer type is written
     /// as decimal; a float follows the expfmt rule in `value.zig`.
-    pub fn value(self: Writer, value_text: anytype) Io.Writer.Error!void {
+    pub fn value(self: *const Writer, value_text: anytype) Io.Writer.Error!void {
         try self.out.writeByte(' ');
         try values.write(self.out, value_text);
         try self.out.writeByte('\n');
@@ -91,7 +91,7 @@ pub const Writer = struct {
 
     /// Bytes the caller already formatted. Written as given: no newline, no
     /// escaping.
-    pub fn line(self: Writer, bytes: []const u8) Io.Writer.Error!void {
+    pub fn line(self: *const Writer, bytes: []const u8) Io.Writer.Error!void {
         try self.out.writeAll(bytes);
     }
 
@@ -99,7 +99,7 @@ pub const Writer = struct {
 
     /// One sample line: the name, the labels, the value, and the newline.
     pub fn writeMetric(
-        self: Writer,
+        self: *const Writer,
         comptime name_text: []const u8,
         label_values: anytype,
         value_text: anytype,
@@ -109,10 +109,10 @@ pub const Writer = struct {
     }
 
     /// `# HELP`, `# TYPE`, and the handle its samples go through.
-    pub fn writeFamily(self: Writer, comptime m: Metric) Io.Writer.Error!FamilyWriter(m) {
+    pub fn writeFamily(self: *const Writer, comptime m: Metric) Io.Writer.Error!FamilyWriter(m) {
         try self.help(m.name, m.help);
         try self.kind(m.name, m.kind);
-        return .{ .writer = self };
+        return .{ .writer = self.* };
     }
 
     /// A whole classic histogram for one label set: the header and one series.
@@ -122,7 +122,7 @@ pub const Writer = struct {
     /// second. Write `writeFamily` once and loop
     /// `FamilyWriter.writeHistogramSeries` instead.
     pub fn writeHistogram(
-        self: Writer,
+        self: *const Writer,
         comptime m: Metric,
         label_values: anytype,
         limits: []const f64,
@@ -144,7 +144,7 @@ pub fn FamilyWriter(comptime m: Metric) type {
 
         writer: Writer,
 
-        pub fn write(self: Self, label_values: anytype, value_text: anytype) Io.Writer.Error!void {
+        pub fn write(self: *const Self, label_values: anytype, value_text: anytype) Io.Writer.Error!void {
             return self.writer.writeMetric(m.name, label_values, value_text);
         }
 
@@ -155,7 +155,7 @@ pub fn FamilyWriter(comptime m: Metric) type {
         /// `sum` is `anytype` so a caller whose sum is a `u64` keeps every
         /// digit; a `f64` cannot hold one above 2^53.
         pub fn writeHistogramSeries(
-            self: Self,
+            self: *const Self,
             label_values: anytype,
             limits: []const f64,
             counts: []const u64,

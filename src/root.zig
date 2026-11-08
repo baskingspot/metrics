@@ -1,5 +1,4 @@
 //! Metrics for Zig: recording primitives, and an exposition writer per format.
-//! No HTTP.
 //!
 //! `prometheus.Writer` is the format: primitives (`help`, `kind`, `name`,
 //! `value`, `line`) and the compositions built on them (`writeMetric`,
@@ -11,28 +10,15 @@
 //! the concurrency model chosen where it is declared, and no write method. The
 //! writer writes; `get` supplies the number.
 
-const writer = @import("writer.zig");
-
-/// Recording types. `counter.Local(u64)` holds a number that only goes up;
-/// `gauge.Local(i64)` holds one that moves both ways; `histogram.Fixed(S, bounds)`
-/// holds a bucket array, a count, and a sum over the caller's counter type. The
-/// constructor names the storage and the argument names the value type.
 pub const counter = @import("counter.zig");
-pub const histogram = @import("histogram.zig");
 pub const gauge = @import("gauge.zig");
-
-/// The Prometheus text exposition format.
-pub const prometheus = struct {
-    pub const Writer = writer.Writer;
-    pub const Kind = writer.Kind;
-    pub const Metric = writer.Metric;
-    pub const FamilyWriter = writer.FamilyWriter;
-};
+pub const histogram = @import("histogram.zig");
+pub const prometheus = @import("prometheus/root.zig");
 
 test {
     _ = @import("counter.zig");
     _ = @import("histogram.zig");
     _ = @import("gauge.zig");
     _ = @import("storage.zig");
-    _ = writer;
+    _ = prometheus;
 }
