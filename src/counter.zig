@@ -16,6 +16,7 @@
 const std = @import("std");
 const testing = std.testing;
 const math = std.math;
+
 const storage = @import("storage.zig");
 
 /// A counter whose field the caller owns. Only the owner writes it.
@@ -47,7 +48,7 @@ fn Counter(comptime S: type) type {
 
         value: S,
 
-        /// One more. Wraps at `maxInt(T)`.
+        /// One more.
         pub inline fn inc(self: *Self) void {
             self.add(1);
         }
@@ -57,13 +58,12 @@ fn Counter(comptime S: type) type {
             self.value.add(n);
         }
 
-        /// The value now. An atomic storage loads monotonically, which is all a
-        /// scrape needs: it orders nothing else.
+        /// The value now.
         pub inline fn get(self: *const Self) S.Value {
             return self.value.load();
         }
 
-        /// A counter at zero. The way to make one: `counter.Local(u64).zero`.
+        /// A counter at zero.
         pub const zero: Self = .{ .value = S.zero };
     };
 }

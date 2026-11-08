@@ -85,8 +85,6 @@ pub fn Storage(comptime mode: Mode, comptime T: type) type {
             }
         }
 
-        /// The compare-exchange loop an atomic float needs: load the bit
-        /// pattern, compute the next one, retry if another thread won the race.
         inline fn atomicAdd(self: *Self, n: T) void {
             // A no-op add does not need to contend for the line.
             if (n == 0) return;
@@ -96,6 +94,8 @@ pub fn Storage(comptime mode: Mode, comptime T: type) type {
                 return;
             }
 
+            // The compare-exchange loop an atomic float needs: load the bit
+            // pattern, compute the next one, retry if another thread won the race.
             var current = @atomicLoad(Bits, &self.raw, .monotonic);
             while (true) {
                 const next: Bits = @bitCast(@as(T, @bitCast(current)) + n);
@@ -106,7 +106,7 @@ pub fn Storage(comptime mode: Mode, comptime T: type) type {
         }
 
         inline fn atomicSub(self: *Self, n: T) void {
-            // A no-op add does not need to contend for the line.
+            // A no-op sub does not need to contend for the line.
             if (n == 0) return;
 
             if (comptime !isFloat(T)) {
@@ -114,6 +114,8 @@ pub fn Storage(comptime mode: Mode, comptime T: type) type {
                 return;
             }
 
+            // The compare-exchange loop an atomic float needs: load the bit
+            // pattern, compute the next one, retry if another thread won the race.
             var current = @atomicLoad(Bits, &self.raw, .monotonic);
             while (true) {
                 const next: Bits = @bitCast(@as(T, @bitCast(current)) - n);

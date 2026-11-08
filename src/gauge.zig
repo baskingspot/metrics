@@ -16,8 +16,9 @@
 const std = @import("std");
 const testing = std.testing;
 const math = std.math;
-const storage = @import("storage.zig");
 const Io = std.Io;
+
+const storage = @import("storage.zig");
 
 /// A gauge whose field the caller owns. Only the owner writes it.
 ///
@@ -53,7 +54,7 @@ fn Gauge(comptime S: type) type {
             self.value.store(v);
         }
 
-        /// Add `n`, wrapping at the type's bounds.
+        /// Add `n`. Wraps at `maxInt(T)`.
         pub inline fn add(self: *Self, n: S.Value) void {
             self.value.add(n);
         }
@@ -79,13 +80,12 @@ fn Gauge(comptime S: type) type {
             self.sub(1);
         }
 
-        /// The value now. An atomic storage loads monotonically, which is all a
-        /// scrape needs: it orders nothing else.
+        /// The value now.
         pub inline fn get(self: *const Self) S.Value {
             return self.value.load();
         }
 
-        /// A gauge at zero. The way to make one: `gauge.Local(i64).zero`.
+        /// A gauge at zero.
         pub const zero: Self = .{ .value = S.zero };
     };
 }
