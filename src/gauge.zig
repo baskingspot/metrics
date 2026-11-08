@@ -53,12 +53,12 @@ fn Gauge(comptime S: type) type {
             self.value.store(v);
         }
 
-        /// Add `n`, which may be negative.
+        /// Add `n`, wrapping at the type's bounds.
         pub inline fn add(self: *Self, n: S.Value) void {
             self.value.add(n);
         }
 
-        /// Subtract `n`, which may be negative, wrapping at the type's bounds.
+        /// Subtract `n`, wrapping at the type's bounds.
         ///
         /// Nothing here looks for a dip below the type's floor. A gauge that
         /// goes negative is a `+` and a `-` that do not match, and the
