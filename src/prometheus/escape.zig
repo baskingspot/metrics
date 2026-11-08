@@ -1,4 +1,5 @@
-//! Escaping for label values and HELP text, and the UTF-8 check in front of it.
+//! Escaping for label values and HELP text, and the UTF-8 decision in front of
+//! it.
 //!
 //! Three bytes are special inside a label value: `\`, `"`, and newline. Two are
 //! special in HELP: `\` and newline. Everything else is written raw, including
@@ -6,19 +7,18 @@
 //! backslash ends the scrape for every series, so the escaping is not optional.
 //!
 //! Invalid UTF-8 is the same class of failure: the parser rejects the document,
-//! so one bad label value takes down the whole scrape. The writer refuses to
-//! emit one and returns `error.InvalidUtf8` instead.
+//! so one bad label value takes down the whole scrape. The writer does not check
+//! for it. A check here turns a crafted value into a debug abort, which is worse
+//! than the poisoned document it replaces because it is not survivable, so the
+//! check belongs at the boundary that accepts the data.
 
 const std = @import("std");
 const Io = std.Io;
 const assert = std.debug.assert;
 const findAny = std.mem.findAny;
 
-/// The value must be valid UTF-8. The writer does not check: a check here
-/// turns a crafted value into a debug abort, which is worse than the poisoned
-/// document it replaces because it is not survivable, and policy about a
-/// caller's data does not belong in the writer. Validate at the boundary that
-/// accepts the data.
+/// The value must be valid UTF-8, and the writer does not check. See the
+/// module comment for why the check lives at the boundary instead.
 pub fn writeLabelValue(w: *Io.Writer, value: []const u8) Io.Writer.Error!void {
     try writeEscaped(w, value, label_specials);
 }

@@ -47,8 +47,8 @@ The API is pre-1.0: pin the commit, and expect it to move.
 Not implemented:
 
 - HTTP. There is no listener, no handler, no `Content-Type` constant, and no status code. Wrap a `std.Io.Writer`.
-- Ordering, family uniqueness, and a document model.
-- A registry, or a write method on a recording type. Read the number with `get` and pass it to the writer.
+- Ordering, family uniqueness, and a document model. The writer lays down lines.
+- A recording type that writes. Read the number with `get` and pass it to the writer.
 - A registry, global state, or a `var` of any kind.
 - Validation of a histogram's counters beyond the length.
 - OpenMetrics 1.0, exemplars, `_created` series, and native histograms.

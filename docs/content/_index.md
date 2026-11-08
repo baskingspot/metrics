@@ -21,6 +21,8 @@ order, and whether a family has help text are the caller's business.
 - [Histograms](#histograms): `Writer.writeHistogram` takes the caller's limits and cumulative counts and writes `_bucket`, `_sum`, and `_count`.
 - [Values and escaping](#values-and-escaping): a float that reads back as an integer is written as one, and the three bytes that need escaping are escaped.
 - [The primitives](#the-primitives): `Writer` writes one record at a time, and every composition above it is built from those methods.
+- [Counters](#counters): `counter.Local(T)` and `counter.Atomic(T)` are an unsigned integer and an add, wrapping, with no way to reset.
+- [Gauges](#gauges): `gauge.Local(T)` and `gauge.Atomic(T)` are a number with `set`, `add`, `sub`, `inc`, `dec`, and `get`; the integer may be signed and the float is `f32` or `f64`.
 - [Limits](#limits): what is deliberately not here, from HTTP to a registry.
 
 The [API reference](api/) documents every public symbol.
@@ -421,8 +423,8 @@ What is not here, named so nobody has to look.
 - HTTP. There is no listener, no handler, no `Content-Type` constant, and no
   status code. Wrap a `std.Io.Writer`.
 - Ordering, family uniqueness, and a document model. The writer lays down lines.
-- Counters and gauges. A counter is a `u64` and an add, and the concurrency
-  model around it is the application's decision. `writeMetric` takes the number.
+- A recording type that writes. Read the number with `get` and pass it to the
+  writer.
 - A registry, global state, or a `var` of any kind.
 - Validation of a histogram's counters beyond the length. Monotone counts, a
   consistent tail, and a matching `sum` are the caller's.
