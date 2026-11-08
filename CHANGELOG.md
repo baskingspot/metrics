@@ -5,6 +5,19 @@ All notable changes to metrics are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-08
+
+### Added
+
+- `histogram.linear(start, width, count)` and `histogram.exponential(start, factor, count)` build a histogram's bounds at comptime; the `+Inf` bucket stays implicit.
+- `histogram.Fixed(...).Snapshot` and `snapshot(&out)`: an atomic histogram fills the caller's buffer with the bucket counts, the observation count, and the sum in one call.
+
+### Changed
+
+- `histogram.counts` takes `*Counts` and returns nothing. The buffer the caller passed is the whole result.
+- A local histogram's `counts()` lends its own bytes as `[]const u64`, so reading one copies nothing.
+- `count()` and `sumValue()` are gone. Read `histogram.observed.get()` and `histogram.total.get()`, or take a `Snapshot`.
+
 ## [0.2.0] - 2026-11-08
 
 ### Added

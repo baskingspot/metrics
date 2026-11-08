@@ -1,6 +1,6 @@
 .{
     .name = .metrics,
-    .version = "0.2.0",
+    .version = "0.3.0",
     .fingerprint = 0x228aaae770208a4d, // Changing this has security and trust implications.
     // The package builds on both, and a 0.16 user must not be turned away by a
     // version check. `.github/ci.yaml` keeps the 0.16 lane honest.
