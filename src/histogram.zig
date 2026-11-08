@@ -16,6 +16,7 @@
 const std = @import("std");
 const testing = std.testing;
 const assert = std.debug.assert;
+
 const counter = @import("counter.zig");
 
 /// A histogram with `bounds.len` finite buckets. `S` is a recording counter
@@ -68,9 +69,9 @@ pub fn Fixed(comptime S: type, comptime bounds: []const f64) type {
 
         /// A histogram with nothing observed.
         pub const zero: Self = .{
-            .buckets = @splat(S.zero),
-            .observed = S.zero,
-            .total = S.zero,
+            .buckets = @splat(.zero),
+            .observed = .zero,
+            .total = .zero,
         };
     };
 }
