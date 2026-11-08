@@ -45,6 +45,9 @@ fn Counter(comptime S: type) type {
         const Self = @This();
 
         pub const ValueType = S.Value;
+        /// True when the field is atomic, which decides whether a histogram can
+        /// hand out its buckets as a slice.
+        pub const atomic: bool = S.atomic;
 
         value: S,
 

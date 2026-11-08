@@ -10,8 +10,11 @@
 //! Microseconds stand in for seconds the same way the counter accumulates
 //! nanoseconds, which keeps the comparison and the sum in whole numbers.
 //!
-//! Buckets are cumulative at observe, so `counts` is already what the writer
-//! wants and `writeHistogramSeries` takes it unchanged.
+//! Buckets are cumulative at observe, so the scrape reads what the writer
+//! wants and `writeHistogramSeries` takes it unchanged. Reading differs by
+//! mode: a local histogram hands out its buckets as a slice, and an atomic one
+//! fills a `Snapshot` the caller owns, because a slice of atomics read without
+//! `@atomicLoad` is a race.
 
 const std = @import("std");
 const testing = std.testing;
@@ -30,9 +33,14 @@ pub fn Fixed(comptime S: type, comptime bounds: []const f64) type {
 
         pub const Bounds = bounds;
         pub const Slot = S;
-        /// What a scrape reads: the bucket counts, how many observations there
-        /// were, and what they summed to. The caller owns the storage, so this
-        /// is `[bounds.len]u64` plus two words on the stack.
+
+        const is_atomic = S.atomic;
+
+        /// What a scrape reads: the bucket counts, how many observations
+        /// there were, and what they summed to. The caller owns the storage,
+        /// so this is `[bounds.len]u64` plus two words on the stack. Atomic
+        /// slots need it filled; a local histogram can take `counts` and skip
+        /// the copy.
         pub const Snapshot = struct {
             buckets: [bounds.len]u64,
             observed: u64,
@@ -42,6 +50,27 @@ pub fn Fixed(comptime S: type, comptime bounds: []const f64) type {
         buckets: [bounds.len]S,
         observed: S,
         total: S,
+
+        /// Fill `out` with everything a scrape needs: the counts are already
+        /// cumulative, so `&out.buckets`, `out.total`, and `out.observed` go
+        /// straight to `writeHistogramSeries`. An atomic histogram has this;
+        /// a local one has `counts`.
+        pub fn snapshot(self: *const Self, out: *Snapshot) void {
+            inline for (0..bounds.len) |i| out.buckets[i] = self.buckets[i].get();
+            out.total = self.total.get();
+            out.observed = self.observed.get();
+        }
+
+        /// The bucket counts, borrowed from the histogram. The slots are one
+        /// integer each and nothing sits between them, so this is the
+        /// histogram's own bytes rather than a copy.
+        pub fn counts(self: *const Self) []const u64 {
+            comptime assert(!is_atomic);
+            comptime assert(@sizeOf(Slot) == @sizeOf(u64));
+            comptime assert(@alignOf(Slot) == @alignOf(u64));
+            const slots: [*]const u64 = @ptrCast(&self.buckets);
+            return slots[0..bounds.len];
+        }
 
         /// One observation of `v`. Every bucket whose bound is at or above `v`
         /// goes up, which is what makes the counts cumulative.
@@ -55,15 +84,6 @@ pub fn Fixed(comptime S: type, comptime bounds: []const f64) type {
             }
             self.observed.inc();
             self.total.add(v);
-        }
-
-        /// Fill `out` with everything a scrape needs: the counts are already
-        /// cumulative, so `&out.buckets`, `out.total`, and `out.observed` go
-        /// straight to `writeHistogramSeries`.
-        pub fn snapshot(self: *const Self, out: *Snapshot) void {
-            inline for (0..bounds.len) |i| out.buckets[i] = self.buckets[i].get();
-            out.total = self.total.get();
-            out.observed = self.observed.get();
         }
 
         /// A histogram with nothing observed.
@@ -117,11 +137,9 @@ test "a value above the largest bound increments only the count" {
     var histogram: Histogram = .zero;
     histogram.observe(101);
 
-    var snap: Histogram.Snapshot = undefined;
-    histogram.snapshot(&snap);
-    try testing.expectEqualSlices(u64, &.{ 0, 0 }, &snap.buckets);
-    try testing.expectEqual(@as(u64, 1), snap.observed);
-    try testing.expectEqual(@as(u64, 101), snap.total);
+    try testing.expectEqualSlices(u64, &.{ 0, 0 }, histogram.counts());
+    try testing.expectEqual(@as(u64, 1), histogram.observed.get());
+    try testing.expectEqual(@as(u64, 101), histogram.total.get());
 }
 
 test "the top bucket and the count agree when nothing overflows it" {
@@ -131,10 +149,20 @@ test "the top bucket and the count agree when nothing overflows it" {
     histogram.observe(50);
     histogram.observe(100);
 
-    var snap: Histogram.Snapshot = undefined;
-    histogram.snapshot(&snap);
-    try testing.expectEqual(@as(u64, 3), snap.buckets[snap.buckets.len - 1]);
-    try testing.expectEqual(snap.observed, snap.buckets[snap.buckets.len - 1]);
+    const counts = histogram.counts();
+    try testing.expectEqual(@as(u64, 3), counts[counts.len - 1]);
+    try testing.expectEqual(histogram.observed.get(), counts[counts.len - 1]);
+}
+
+test "counts on a local histogram is a view, not a copy" {
+    const Histogram = Fixed(counter.Local(u64), &.{10});
+    var histogram: Histogram = .zero;
+    histogram.observe(5);
+
+    const counts = histogram.counts();
+    try testing.expectEqual(@as(u64, 1), counts[0]);
+    histogram.observe(5);
+    try testing.expectEqual(@as(u64, 2), counts[0]);
 }
 
 test "the sum is exact above 2^53" {
@@ -144,9 +172,7 @@ test "the sum is exact above 2^53" {
     histogram.observe(big);
     histogram.observe(1);
 
-    var snap: Histogram.Snapshot = undefined;
-    histogram.snapshot(&snap);
-    try testing.expectEqual(big + 1, snap.total);
+    try testing.expectEqual(big + 1, histogram.total.get());
 }
 
 test "empty bounds are legal and keep only the count" {
@@ -155,11 +181,9 @@ test "empty bounds are legal and keep only the count" {
     histogram.observe(7);
     histogram.observe(9);
 
-    var snap: Histogram.Snapshot = undefined;
-    histogram.snapshot(&snap);
-    try testing.expectEqual(@as(usize, 0), snap.buckets.len);
-    try testing.expectEqual(@as(u64, 2), snap.observed);
-    try testing.expectEqual(@as(u64, 16), snap.total);
+    try testing.expectEqual(@as(usize, 0), histogram.counts().len);
+    try testing.expectEqual(@as(u64, 2), histogram.observed.get());
+    try testing.expectEqual(@as(u64, 16), histogram.total.get());
 }
 
 test "both slot types agree step for step" {
@@ -176,11 +200,9 @@ test "both slot types agree step for step" {
         local.observe(v);
     }
 
-    var local_snap: Local.Snapshot = undefined;
-    var atomic_snap: Atomic.Snapshot = undefined;
-    local.snapshot(&local_snap);
-    atomic.snapshot(&atomic_snap);
-    try testing.expectEqualSlices(u64, &local_snap.buckets, &atomic_snap.buckets);
-    try testing.expectEqual(local_snap.observed, atomic_snap.observed);
-    try testing.expectEqual(local_snap.total, atomic_snap.total);
+    var snap: Atomic.Snapshot = undefined;
+    atomic.snapshot(&snap);
+    try testing.expectEqualSlices(u64, &snap.buckets, local.counts());
+    try testing.expectEqual(snap.observed, local.observed.get());
+    try testing.expectEqual(snap.total, local.total.get());
 }

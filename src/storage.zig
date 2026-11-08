@@ -31,6 +31,9 @@ pub fn Storage(comptime mode: Mode, comptime T: type) type {
         };
 
         pub const Value = T;
+        /// Which side of the axis this storage sits on. The recording types
+        /// take it from here rather than carrying a second copy of the answer.
+        pub const atomic: bool = mode == .atomic;
 
         raw: Field,
 

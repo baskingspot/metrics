@@ -191,9 +191,11 @@ atomicity for all of them.
 ```
 
 `observe(v)` walks the bounds at comptime and increments every bucket whose
-bound is at or above `v`, so the counts are cumulative at observe and
-`counts(&buffer)` is already what `writeHistogramSeries` wants. The buffer is
-`[bounds.len]u64` on the stack: nothing here allocates, and nothing keeps a
+bound is at or above `v`, so the counts are cumulative at observe and go to
+`writeHistogramSeries` unchanged. Atomic slots fill a `Snapshot` you own:
+`[bounds.len]u64` plus the count and the sum on the stack. A local histogram
+needs none of that — it is plain integers already, so `counts()` lends you its
+own buckets and copies nothing. Nothing here allocates, and nothing keeps a
 pointer past the call.
 
 `S` is `counter.Atomic(u64)` for a scrape that reads while workers observe, and
