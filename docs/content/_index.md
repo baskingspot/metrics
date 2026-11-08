@@ -358,13 +358,19 @@ The loop is what keeps a contended gauge correct: four threads adding to one
 `Atomic(f64)` produce the exact total, which is what the contention test in the
 source asserts.
 
-## Subtraction, and the floor an unsigned gauge has
+## Subtraction, and the floor nothing checks
 
-An unsigned gauge asserts, in `sub`, that the value it observed covers what it is
-subtracting: a debug build catches the dip below zero, and a release build wraps
-so the next scrape shows it. Saturating would hide the bug at a flat line, the
-same reason a counter does not saturate. A signed gauge has no such floor.
-Going negative is the point, and only `minInt` wraps.
+`sub` wraps at the type's bounds and reports nothing. A gauge that dips below
+zero on an unsigned type is a `+` and a `-` that do not match, and no arithmetic
+inside the type can find the second one, so there is no assertion to make.
+Saturating would be worse than wrapping: it turns a mismatch into a flat line,
+which is the same bug with less evidence. A signed gauge has no floor at all --
+going negative is the point -- and a float reaches `-Inf` rather than wrapping.
+
+The pattern that prevents the mismatch is to pair the operations on one object:
+`var lease = in_flight.acquire(); defer lease.release();`. Zig has no
+destructor, so the `defer` is still the caller's to write, but the two halves
+cannot be inverted or counted twice.
 
 ## HELP and TYPE are optional
 

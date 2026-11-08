@@ -16,7 +16,6 @@
 const std = @import("std");
 const testing = std.testing;
 const math = std.math;
-const assert = std.debug.assert;
 const storage = @import("storage.zig");
 const Io = std.Io;
 
@@ -59,20 +58,15 @@ fn Gauge(comptime S: type) type {
             self.value.add(n);
         }
 
-        /// Subtract `n`, which may be negative.
+        /// Subtract `n`, which may be negative, wrapping at the type's bounds.
         ///
-        /// An unsigned gauge asserts that the value the subtraction observed
-        /// covers it, so a debug build catches the dip below zero; a release
-        /// build wraps, which shows up in the next scrape. Saturating would hide
-        /// the bug at a flat line, the same way it would in a counter. The
-        /// observed value comes back from the subtraction itself, so nothing
-        /// races.
-        ///
-        /// A signed integer has no such floor, and a float has neither a floor
-        /// nor a wrap: going negative is the point.
+        /// Nothing here looks for a dip below the type's floor. A gauge that
+        /// goes negative is a `+` and a `-` that do not match, and the
+        /// arithmetic cannot find the second one; saturating would turn the
+        /// mismatch into a flat line, which is the same bug with less evidence.
+        /// A float has no floor at all: going negative is the point.
         pub inline fn sub(self: *Self, n: S.Value) void {
-            const previous = self.value.sub(n);
-            if (comptime hasFloor(S.Value)) assert(previous >= n);
+            self.value.sub(n);
         }
 
         /// One more.
@@ -93,15 +87,6 @@ fn Gauge(comptime S: type) type {
 
         /// A gauge at zero. The way to make one: `gauge.Local(i64).zero`.
         pub const zero: Self = .{ .value = S.zero };
-    };
-}
-
-/// True when `sub` has a floor to enforce: an unsigned type has one at zero, a
-/// signed integer and a float do not.
-fn hasFloor(comptime T: type) bool {
-    return switch (@typeInfo(T)) {
-        .int => |info| info.signedness == .unsigned,
-        else => false,
     };
 }
 
@@ -133,8 +118,8 @@ test "subtracting to exactly zero is allowed" {
     try testing.expectEqual(@as(u64, 0), local.get());
     try testing.expectEqual(@as(u64, 0), atomic.get());
 
-    // One more subtraction would be the underflow the assertion exists to
-    // catch, so the test stops at the boundary rather than past it.
+    // A decrement to exactly zero is the boundary. One more wraps, and the
+    // wrap is the caller's to avoid, so the test stops here.
     local.set(1);
     atomic.set(1);
     local.dec();

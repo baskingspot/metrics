@@ -6,9 +6,10 @@
 //! call.
 //!
 //! Both expose the same five operations over `Value = T`, so `counter` and
-//! `gauge` never branch on the mode. `sub` returns the value it replaced, which
-//! is what lets a gauge assert an underflow against the value the subtraction
-//! observed instead of loading first and racing.
+//! `gauge` never branch on the mode: `load`, `store`, `add`, `sub`, and
+//! `zero`. The arithmetic wraps at the type's bounds and reports nothing; a
+//! value that underflows is the caller's arithmetic bug to avoid, not something
+//! this layer hands back.
 //!
 //! Nothing here wraps `std.atomic.Value`: the builtins are the whole interface
 //! this needs, and `@atomicRmw` on the value type is a shorter path to the same
@@ -16,7 +17,6 @@
 
 const std = @import("std");
 const testing = std.testing;
-const assert = std.debug.assert;
 
 pub const Mode = enum { local, atomic };
 
@@ -34,20 +34,31 @@ pub fn Storage(comptime mode: Mode, comptime T: type) type {
 
         raw: Field,
 
-        pub inline fn load(self: *const Self) Value {
-            if (comptime mode == .local) {
-                return self.raw;
-            } else if (comptime isFloat(T)) {
-                return @bitCast(@atomicLoad(Bits, &self.raw, .monotonic));
-            } else {
-                return @atomicLoad(T, &self.raw, .monotonic);
+        pub const zero: Self = .{ .raw = 0 };
+
+        pub inline fn load(self: *const Self) T {
+            return switch (mode) {
+                .local => self.raw,
+                .atomic => self.atomicLoad(),
+            };
+        }
+
+        pub inline fn atomicLoad(self: *const Self) T {
+            return if (comptime isFloat(T))
+                @bitCast(@atomicLoad(Bits, &self.raw, .monotonic))
+            else
+                @atomicLoad(T, &self.raw, .monotonic);
+        }
+
+        pub inline fn store(self: *Self, v: T) void {
+            switch (mode) {
+                .local => self.raw = v,
+                .atomic => self.atomicStore(v),
             }
         }
 
-        pub inline fn store(self: *Self, v: Value) void {
-            if (comptime mode == .local) {
-                self.raw = v;
-            } else if (comptime isFloat(T)) {
+        pub inline fn atomicStore(self: *Self, v: T) void {
+            if (comptime isFloat(T)) {
                 @atomicStore(Bits, &self.raw, @bitCast(v), .monotonic);
             } else {
                 @atomicStore(T, &self.raw, v, .monotonic);
@@ -55,51 +66,60 @@ pub fn Storage(comptime mode: Mode, comptime T: type) type {
         }
 
         /// Add `n`, wrapping at the type's bounds.
-        pub inline fn add(self: *Self, n: Value) void {
-            if (comptime mode == .local) {
-                if (comptime isFloat(T)) {
-                    self.raw += n;
-                } else {
-                    self.raw +%= n;
-                }
-            } else if (comptime isFloat(T)) {
-                _ = self.fetchAdd(n);
-            } else {
-                _ = @atomicRmw(T, &self.raw, .Add, n, .monotonic);
+        pub inline fn add(self: *Self, n: T) void {
+            switch (mode) {
+                .local => {
+                    if (comptime isFloat(T)) self.raw += n else self.raw +%= n;
+                },
+                .atomic => self.atomicAdd(n),
             }
         }
 
-        /// Subtract `n`, wrapping at the type's bounds. Returns the value the
-        /// subtraction replaced.
-        pub inline fn sub(self: *Self, n: Value) Value {
-            if (comptime mode == .local) {
-                const previous = self.raw;
-                if (comptime isFloat(T)) {
-                    self.raw -= n;
-                } else {
-                    self.raw = previous -% n;
-                }
-                return previous;
-            } else if (comptime isFloat(T)) {
-                return self.fetchAdd(-n);
-            } else {
-                return @atomicRmw(T, &self.raw, .Sub, n, .monotonic);
+        /// Subtract `n`, wrapping at the type's bounds.
+        pub inline fn sub(self: *Self, n: T) void {
+            switch (mode) {
+                .local => {
+                    if (comptime isFloat(T)) self.raw -= n else self.raw -%= n;
+                },
+                .atomic => self.atomicSub(n),
             }
         }
-
-        pub const zero: Self = .{ .raw = 0 };
 
         /// The compare-exchange loop an atomic float needs: load the bit
         /// pattern, compute the next one, retry if another thread won the race.
-        fn fetchAdd(self: *Self, n: T) T {
+        inline fn atomicAdd(self: *Self, n: T) void {
             // A no-op add does not need to contend for the line.
-            if (n == 0) return self.load();
-            var current: Bits = @atomicLoad(Bits, &self.raw, .monotonic);
+            if (n == 0) return;
+
+            if (comptime !isFloat(T)) {
+                _ = @atomicRmw(T, &self.raw, .Add, n, .monotonic);
+                return;
+            }
+
+            var current = @atomicLoad(Bits, &self.raw, .monotonic);
             while (true) {
                 const next: Bits = @bitCast(@as(T, @bitCast(current)) + n);
                 if (@cmpxchgWeak(Bits, &self.raw, current, next, .monotonic, .monotonic)) |observed| {
                     current = observed;
-                } else return @bitCast(current);
+                } else return;
+            }
+        }
+
+        inline fn atomicSub(self: *Self, n: T) void {
+            // A no-op add does not need to contend for the line.
+            if (n == 0) return;
+
+            if (comptime !isFloat(T)) {
+                _ = @atomicRmw(T, &self.raw, .Sub, n, .monotonic);
+                return;
+            }
+
+            var current = @atomicLoad(Bits, &self.raw, .monotonic);
+            while (true) {
+                const next: Bits = @bitCast(@as(T, @bitCast(current)) - n);
+                if (@cmpxchgWeak(Bits, &self.raw, current, next, .monotonic, .monotonic)) |observed| {
+                    current = observed;
+                } else return;
             }
         }
     };
@@ -162,21 +182,11 @@ test "a local and an atomic storage agree step for step" {
         try testing.expectEqual(local.load(), atomic.load());
     }
 
-    // Subtracting nothing hands back the value it left in place.
     const before = local.load();
-    try testing.expectEqual(before, local.sub(0));
-    try testing.expectEqual(before, atomic.sub(0));
-    try testing.expectEqual(local.load(), atomic.load());
-}
-
-test "sub returns the value it replaced" {
-    var local: Storage(.local, u32) = .{ .raw = 10 };
-    try testing.expectEqual(@as(u32, 10), local.sub(4));
-    try testing.expectEqual(@as(u32, 6), local.load());
-
-    var atomic: Storage(.atomic, u32) = .{ .raw = 10 };
-    try testing.expectEqual(@as(u32, 10), atomic.sub(4));
-    try testing.expectEqual(@as(u32, 6), atomic.load());
+    local.sub(0);
+    atomic.sub(0);
+    try testing.expectEqual(before, local.load());
+    try testing.expectEqual(before, atomic.load());
 }
 
 test "an atomic float is an integer atomic holding the bit pattern" {
@@ -185,7 +195,7 @@ test "an atomic float is an integer atomic holding the bit pattern" {
     try testing.expectEqual(@as(f64, 1.5), storage_value.load());
     storage_value.add(2.25);
     try testing.expectEqual(@as(f64, 3.75), storage_value.load());
-    try testing.expectEqual(@as(f64, 3.75), storage_value.sub(1.25));
+    storage_value.sub(1.25);
     try testing.expectEqual(@as(f64, 2.5), storage_value.load());
     try testing.expectEqual(@as(usize, 8), @sizeOf(@TypeOf(storage_value.raw)));
 }
