@@ -42,7 +42,7 @@ const metrics = b.dependency("metrics", .{ .target = target, .optimize = optimiz
 exe.root_module.addImport("metrics", metrics.module("metrics"));
 ```
 
-`metrics` builds with Zig 0.16 and 0.17. Its one dependency is `testingx`,
+`metrics` builds with Zig 0.17. Its one dependency is `testingx`,
 which is lazy and comes after an early return in `build.zig`, so a consumer
 fetches nothing but the module.
 

@@ -52,7 +52,7 @@ check-cold:
 # integer value, so without this the oracle would only ever see floats from the
 # runtime door. It splits the archive on the txtar markers, which is safe
 # because a golden document holds no NUL.
-[doc("Pipe every golden document through prom2json, so the comptime door and the integer values reach the oracle on both lanes")]
+[doc("Pipe every golden document through prom2json, so the comptime door and the integer values reach the oracle")]
 [group("test")]
 check-golden:
     #!/usr/bin/env bash
@@ -94,7 +94,7 @@ check-bench:
 [doc("Lint Zig, Nix, Markdown, the workflows, and this justfile: ziglint, the shared ast-grep rules, zig fmt, nix fmt, oxfmt, actionlint, zizmor, and just --fmt")]
 [group("lint")]
 lint:
-    ziglint-0-16
+    ziglint-0-17
     baskingspot-lint src
     zig fmt --check src test tools bench build.zig build.zig.zon
     nix fmt -- --ci
@@ -111,7 +111,7 @@ fmt:
     oxfmt README.md AGENTS.md CHANGELOG.md docs/content docs/config.toml docs/static .github .oxfmtrc.jsonc wrangler.jsonc
     just --fmt
 
-[doc("The per-version gate: the module suite and the oracle pass over the goldens, on either compiler")]
+[doc("The gate without the lint: the module suite and the oracle pass over the goldens")]
 [group("ci")]
 check: test check-golden
 

@@ -28,7 +28,7 @@ pub fn build(b: *std.Build) void {
 
     const mod_tests = b.addTest(.{ .root_module = mod, .test_runner = test_runner });
     const run_mod_tests = b.addRunArtifact(mod_tests);
-    passthruArgs(b, run_mod_tests);
+    run_mod_tests.addPassthruArgs();
     test_step.dependOn(&run_mod_tests.step);
 
     // The golden documents and the runtime door's error paths. The archive is
@@ -79,7 +79,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("bench/encode.zig"),
             .imports = &.{.{ .name = "metrics", .module = mod }},
         });
-        passthruArgs(b, run_bench);
+        run_bench.addPassthruArgs();
         bench_step.dependOn(&run_bench.step);
     }
 }
@@ -102,16 +102,6 @@ fn addTool(
         }),
     });
     const run = b.addRunArtifact(tool);
-    passthruArgs(b, run);
+    run.addPassthruArgs();
     b.step(name, b.fmt("Run tools/{s}.zig", .{name})).dependOn(&run.step);
-}
-
-/// `b.args` (removed in Zig 0.17) and `Run.addPassthruArgs` are the same
-/// feature on either side of the split. Probe the build API, not the version.
-fn passthruArgs(b: *std.Build, run: *std.Build.Step.Run) void {
-    if (comptime @hasDecl(std.Build.Step.Run, "addPassthruArgs")) {
-        run.addPassthruArgs();
-    } else if (b.args) |args| {
-        run.addArgs(args);
-    }
 }

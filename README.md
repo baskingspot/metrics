@@ -71,7 +71,7 @@ No std namespace is named `metrics`, so nothing needs an alias. A program that a
 imports the format instead of the package — `const prometheus = @import("metrics").prometheus;`
 — and call sites read `prometheus.Writer` as before. One that wants the
 recording types too imports the package as `metricsx`, the org's rule for a
-shadowed name. `metrics` builds with Zig 0.16 and 0.17. It has one dependency, `testingx`, marked lazy
+shadowed name. `metrics` builds with Zig 0.17. It has one dependency, `testingx`, marked lazy
 and used only after `build.zig` returns for a consumer, so a consumer's fetch
 graph is the module and nothing else.
 
@@ -95,7 +95,7 @@ lint, the `prom2json` gates, one benchmark iteration, and the site build.
 Two recipes check the output against Prometheus's own parser:
 `just check-golden` pipes every golden document through it, and
 `just check-corpus N SEED` renders `N` random documents from a seed and fails
-on the first rejection. `just check` is the same gate on the previous Zig.
+on the first rejection.
 
 `just bench` runs the encode benchmarks in ReleaseFast and reports bytes per
 second.

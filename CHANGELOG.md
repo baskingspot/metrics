@@ -5,6 +5,10 @@ All notable changes to metrics are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Zig 0.17 only: `minimum_zig_version` is `0.17.0`, and 0.16 is no longer built or tested. Upgrade the toolchain before taking this version.
+
 ## [0.3.0] - 2026-11-08
 
 ### Added

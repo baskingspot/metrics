@@ -8,16 +8,16 @@ Prometheus text exposition format for Zig: write metrics to any writer, no HTTP.
 
 ## Environment
 
-Zig 0.16 and 0.17, one behavior. The flake is the tool contract, from `baskingspot/nix`: `nix develop` provides Zig 0.17, `ziglint`, and the base tools, `nix develop .#zig-old` provides Zig 0.16, and nothing comes from the system PATH. `src/compat.zig` holds the shims, and no public API may be conditional on the version. `just ci` runs the full gate on 0.17; `just check` is the lane that must pass on 0.16.
+Zig 0.17. The flake is the tool contract, from `baskingspot/nix`: `nix develop` provides Zig 0.17, `ziglint`, and the base tools, and nothing comes from the system PATH. `just ci` runs the full gate.
 
-Both `zig fmt` versions must leave the tree unchanged. `@intFromEnum` is out for that reason: 0.17's formatter rewrites it to `@backingInt`, which 0.16 cannot parse.
+`zig fmt` must leave the tree unchanged. `@intFromEnum` is `@backingInt` under 0.17's formatter, so write the spelling the formatter keeps.
 
 The justfile is the command interface: `just test`, `just lint`, `just ci`. Run `just fmt` before you commit.
 
 ## Rules
 
 - Commit messages are one line, `area: summary`, and every commit is signed. Do not rewrite pushed history.
-- Gate commands on their exit codes, and claim only what you ran. A run on one compiler says nothing about the other.
+- Gate commands on their exit codes, and claim only what you ran.
 - Format with `zig fmt` and lint with `ziglint`. `just fmt` and `just lint` run both.
 - Two layers in one file, because Zig cannot add a method from another: `src/writer.zig` has a primitives half (`help`, `kind`, `name`, `value`, `line`) and a compositions half (`writeMetric`, `writeFamily`, `writeHistogram`, `FamilyWriter.writeHistogramSeries`), separated by a doc comment. A composition may only write through the primitives, and the test `the composition is the primitives, byte for byte` is what enforces it.
 - No HTTP, allocator, clock, thread, or `var` in the library. The only error is the sink's.

@@ -68,7 +68,7 @@ fn writeGoFloat(w: *Io.Writer, value: f64) Io.Writer.Error!void {
     var buffer: [scientific_size]u8 = undefined;
     // `{e}` is the shortest digits in scientific form with no sign and no
     // padding on the exponent; re-spacing them is all Go's `'g'` needs.
-    const text = std.fmt.bufPrint(&buffer, "{e}", .{value}) catch unreachable;
+    const text = std.mem.print(&buffer, "{e}", .{value}) catch unreachable;
 
     const negative = text[0] == '-';
     const body = if (negative) text[1..] else text;

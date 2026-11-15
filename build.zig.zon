@@ -2,9 +2,8 @@
     .name = .metrics,
     .version = "0.3.0",
     .fingerprint = 0x228aaae770208a4d, // Changing this has security and trust implications.
-    // The package builds on both, and a 0.16 user must not be turned away by a
-    // version check. `.github/ci.yaml` keeps the 0.16 lane honest.
-    .minimum_zig_version = "0.16.0",
+    // The build floor, and the toolchain `.github/ci.yaml` runs: 0.17.
+    .minimum_zig_version = "0.17.0",
     .dependencies = .{
         // The test runner and the benchmark harness. Lazy: only the root build
         // uses it, and build.zig returns before this is fetched for a consumer.

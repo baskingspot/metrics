@@ -12,13 +12,10 @@
     inputs@{ flake-parts, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
       # imports and inputsFrom below mirror each other, including the
-      # toolchain version. Both versions build; the default is the current
-      # stable, and `zig-old` is the previous one for the CI compatibility
-      # lane and for local checks.
+      # toolchain version: 0.17, the one the package builds on.
       imports = with inputs.baskingspot.flakeModules; [
         base
         docs
-        zig."0.16"
         zig."0.17"
       ];
 
@@ -33,21 +30,10 @@
             ];
             # The oracle for `just check-golden` and `just check-corpus`:
             # Prometheus 3.15.1's own exposition parser, from the flake so the
-            # gates run offline.
+            # gates run offline. ziglint lints against the minimum supported
+            # std, which is 0.17.
             packages = with pkgs; [
-              config.packages."ziglint-0-16"
-              prom2json
-            ];
-          };
-
-          devShells.zig-old = pkgs.mkShell {
-            inputsFrom = [
-              config.devShells.base
-              config.devShells.docs
-              config.devShells."zig-0-16"
-            ];
-            packages = with pkgs; [
-              config.packages."ziglint-0-16"
+              config.packages."ziglint-0-17"
               prom2json
             ];
           };

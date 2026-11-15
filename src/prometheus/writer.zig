@@ -20,7 +20,6 @@ const Io = std.Io;
 const assert = std.debug.assert;
 const testing = std.testing;
 
-const compat = @import("../compat.zig");
 const escaping = @import("escape.zig");
 const names = @import("name.zig");
 const values = @import("value.zig");
@@ -200,10 +199,10 @@ const Le = struct { le: []const u8 };
 
 /// Labels a struct, or a tuple of structs, holds.
 fn labelCount(comptime T: type) usize {
-    if (comptime !isTupleGroup(T)) return compat.fieldCount(T);
+    if (comptime !isTupleGroup(T)) return @typeInfo(T).@"struct".field_names.len;
     var total: usize = 0;
-    inline for (0..comptime compat.fieldCount(T)) |i| {
-        total += compat.fieldCount(compat.FieldType(T, i));
+    inline for (@typeInfo(T).@"struct".field_types) |Group| {
+        total += @typeInfo(Group).@"struct".field_names.len;
     }
     return total;
 }
@@ -211,17 +210,16 @@ fn labelCount(comptime T: type) usize {
 fn writeLabelGroups(w: *Io.Writer, labels: anytype) Io.Writer.Error!void {
     if (comptime !isTupleGroup(@TypeOf(labels))) return writeLabelFields(w, labels, 0);
     var written: usize = 0;
-    inline for (0..comptime compat.fieldCount(@TypeOf(labels))) |i| {
-        const group = @field(labels, compat.fieldName(@TypeOf(labels), i));
+    inline for (@typeInfo(@TypeOf(labels)).@"struct".field_names) |group_name| {
+        const group = @field(labels, group_name);
         try writeLabelFields(w, group, written);
-        written += comptime compat.fieldCount(@TypeOf(group));
+        written += comptime @typeInfo(@TypeOf(group)).@"struct".field_names.len;
     }
 }
 
 fn writeLabelFields(w: *Io.Writer, labels: anytype, offset: usize) Io.Writer.Error!void {
     const LabelStruct = @TypeOf(labels);
-    inline for (0..comptime compat.fieldCount(LabelStruct)) |i| {
-        const label_name = comptime compat.fieldName(LabelStruct, i);
+    inline for (@typeInfo(LabelStruct).@"struct".field_names, 0..) |label_name, i| {
         comptime checkLabelName(label_name);
         if (offset + i > 0) try w.writeByte(',');
         try w.writeAll(label_name);
