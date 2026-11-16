@@ -16,9 +16,9 @@ pub fn build(b: *std.Build) void {
 
     // testingx provides the test runner. It is lazy because only the root
     // build uses it; a consumer never fetches it. On the first configure pass
-    // it is not fetched yet, `lazyDependency` returns null, and the build
-    // runner fetches it and reruns this script.
-    const testingx_dep = b.lazyDependency("testingx", .{ .target = target });
+    // it is not fetched yet, `dependencyLazy` reports that it is needed, and
+    // the build runner fetches it and reruns this script.
+    const testingx_dep = b.dependencyLazy("testingx", .{ .target = target }) catch null;
     const test_runner: ?std.Build.Step.Compile.TestRunner = if (testingx_dep) |dep|
         .{ .path = dep.path("src/runner.zig"), .mode = .simple }
     else
@@ -71,7 +71,7 @@ pub fn build(b: *std.Build) void {
     // the lazy dependency is unfetched `lazyImport` returns null and no bench
     // step is defined; the build runner fetches it and reruns this script.
     if (b.lazyImport(@This(), "testingx")) |testingx| {
-        const bench_dep = b.lazyDependency("testingx", .{ .target = target }).?;
+        const bench_dep = (b.dependencyLazy("testingx", .{ .target = target }) catch null).?;
         const bench_step = b.step("bench", "Run the encode benchmarks (ReleaseFast)");
         const run_bench = testingx.addBench(b, .{
             .name = "bench-encode",
