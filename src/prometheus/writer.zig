@@ -47,7 +47,11 @@ pub const Writer = struct {
 
     /// `# HELP name text`, with the text escaped. An empty text writes the line
     /// without a trailing space.
-    pub fn help(self: *const Writer, comptime metric_name: []const u8, text: []const u8) Io.Writer.Error!void {
+    pub fn help(
+        self: *const Writer,
+        comptime metric_name: []const u8,
+        text: []const u8,
+    ) Io.Writer.Error!void {
         comptime checkName(metric_name);
         try self.out.writeAll("# HELP ");
         try self.out.writeAll(metric_name);
@@ -59,7 +63,11 @@ pub const Writer = struct {
     }
 
     /// `# TYPE name kind`.
-    pub fn kind(self: *const Writer, comptime metric_name: []const u8, type_kind: Kind) Io.Writer.Error!void {
+    pub fn kind(
+        self: *const Writer,
+        comptime metric_name: []const u8,
+        type_kind: Kind,
+    ) Io.Writer.Error!void {
         comptime checkName(metric_name);
         try self.out.writeAll("# TYPE ");
         try self.out.writeAll(metric_name);
@@ -71,7 +79,11 @@ pub const Writer = struct {
     /// `name{label="value",...}` with no trailing space. A struct gives its
     /// fields in order; a tuple of structs gives their fields in sequence, which
     /// is how a caller adds a label of its own to one it already has.
-    pub fn name(self: *const Writer, comptime name_text: []const u8, labels: anytype) Io.Writer.Error!void {
+    pub fn name(
+        self: *const Writer,
+        comptime name_text: []const u8,
+        labels: anytype,
+    ) Io.Writer.Error!void {
         comptime checkName(name_text);
         try self.out.writeAll(name_text);
         if (comptime labelCount(@TypeOf(labels)) == 0) return;
@@ -143,7 +155,11 @@ pub fn FamilyWriter(comptime m: Metric) type {
 
         writer: Writer,
 
-        pub fn write(self: *const Self, label_values: anytype, value_text: anytype) Io.Writer.Error!void {
+        pub fn write(
+            self: *const Self,
+            label_values: anytype,
+            value_text: anytype,
+        ) Io.Writer.Error!void {
             return self.writer.writeMetric(m.name, label_values, value_text);
         }
 
@@ -162,10 +178,14 @@ pub fn FamilyWriter(comptime m: Metric) type {
             count: u64,
         ) Io.Writer.Error!void {
             comptime if (m.kind != .histogram) {
-                @compileError("metrics: writeHistogramSeries needs a Metric whose kind is .histogram");
+                @compileError(
+                    "metrics: writeHistogramSeries needs a Metric whose kind is .histogram",
+                );
             };
             comptime if (@hasField(@TypeOf(label_values), "le")) {
-                @compileError("metrics: a histogram label set cannot contain \"le\", which this writes");
+                @compileError(
+                    "metrics: a histogram label set cannot contain \"le\", which this writes",
+                );
             };
             assert(counts.len == limits.len);
 

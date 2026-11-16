@@ -36,7 +36,9 @@ pub fn Atomic(comptime T: type) type {
 
 fn checkUnsigned(comptime T: type, comptime constructor: []const u8) void {
     comptime if (!storage.isInteger(T) or @typeInfo(T).int.signedness != .unsigned) {
-        @compileError("metrics: " ++ constructor ++ "(T) takes an unsigned integer, not " ++ @typeName(T));
+        @compileError(
+            "metrics: " ++ constructor ++ "(T) takes an unsigned integer, not " ++ @typeName(T),
+        );
     };
 }
 

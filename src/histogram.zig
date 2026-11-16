@@ -121,7 +121,9 @@ pub fn exponential(comptime start: f64, comptime factor: f64, comptime count: us
 
 fn checkType(comptime S: type) void {
     comptime if (!@hasDecl(S, "zero") or !@hasDecl(S, "inc") or !@hasDecl(S, "get")) {
-        @compileError("metrics: histogram.Fixed's slot is a recording counter type, not " ++ @typeName(S));
+        @compileError(
+            "metrics: histogram.Fixed's slot is a recording counter type, not " ++ @typeName(S),
+        );
     };
     comptime if (@typeInfo(S.ValueType) != .int) {
         @compileError("metrics: histogram.Fixed's slot counts an integer, and " ++
@@ -137,7 +139,9 @@ fn checkBounds(comptime bounds: []const f64) void {
                 @compileError("metrics: histogram.Fixed bounds must be finite");
             }
             if (i > 0 and !(bound > previous)) {
-                @compileError("metrics: histogram.Fixed bounds must be ascending, and this one is not");
+                @compileError(
+                    "metrics: histogram.Fixed bounds must be ascending, and this one is not",
+                );
             }
             previous = bound;
         }

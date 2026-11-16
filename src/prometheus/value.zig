@@ -34,7 +34,9 @@ pub fn write(w: *Io.Writer, value: anytype) Io.Writer.Error!void {
             else => @compileError("metrics: a metric value is at most f64"),
         },
         .comptime_float => writeFloat(w, @floatCast(value)),
-        else => @compileError("metrics: a metric value is an integer or a float, not " ++ @typeName(@TypeOf(value))),
+        else => @compileError(
+            "metrics: a metric value is an integer or a float, not " ++ @typeName(@TypeOf(value)),
+        ),
     };
 }
 

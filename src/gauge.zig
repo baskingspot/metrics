@@ -37,7 +37,9 @@ pub fn Atomic(comptime T: type) type {
 
 fn checkNumber(comptime T: type, comptime constructor: []const u8) void {
     comptime if (!storage.isNumber(T)) {
-        @compileError("metrics: " ++ constructor ++ "(T) takes an integer, f32, or f64, not " ++ @typeName(T));
+        @compileError(
+            "metrics: " ++ constructor ++ "(T) takes an integer, f32, or f64, not " ++ @typeName(T),
+        );
     };
 }
 

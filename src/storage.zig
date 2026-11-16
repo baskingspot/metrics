@@ -102,7 +102,14 @@ pub fn Storage(comptime mode: Mode, comptime T: type) type {
             var current = @atomicLoad(Bits, &self.raw, .monotonic);
             while (true) {
                 const next: Bits = @bitCast(@as(T, @bitCast(current)) + n);
-                if (@cmpxchgWeak(Bits, &self.raw, current, next, .monotonic, .monotonic)) |observed| {
+                if (@cmpxchgWeak(
+                    Bits,
+                    &self.raw,
+                    current,
+                    next,
+                    .monotonic,
+                    .monotonic,
+                )) |observed| {
                     current = observed;
                 } else return;
             }
@@ -122,7 +129,14 @@ pub fn Storage(comptime mode: Mode, comptime T: type) type {
             var current = @atomicLoad(Bits, &self.raw, .monotonic);
             while (true) {
                 const next: Bits = @bitCast(@as(T, @bitCast(current)) - n);
-                if (@cmpxchgWeak(Bits, &self.raw, current, next, .monotonic, .monotonic)) |observed| {
+                if (@cmpxchgWeak(
+                    Bits,
+                    &self.raw,
+                    current,
+                    next,
+                    .monotonic,
+                    .monotonic,
+                )) |observed| {
                     current = observed;
                 } else return;
             }
@@ -161,7 +175,9 @@ pub fn isNumber(comptime T: type) bool {
 
 fn checkType(comptime mode: Mode, comptime T: type) void {
     comptime if (!isNumber(T)) {
-        @compileError("metrics: storage.Storage(T) takes an integer, f32, or f64, not " ++ @typeName(T));
+        @compileError(
+            "metrics: storage.Storage(T) takes an integer, f32, or f64, not " ++ @typeName(T),
+        );
     };
     comptime if (isFloat(T) and @typeInfo(T).float.bits != 32 and @typeInfo(T).float.bits != 64) {
         @compileError("metrics: a gauge float is f32 or f64, not " ++ @typeName(T));
