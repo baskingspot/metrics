@@ -5,7 +5,7 @@
   </picture>
 </h1>
 
-Prometheus text exposition format for Zig: write metrics to any writer, no HTTP.
+Prometheus text exposition for Zig: write metrics to any writer, with counters, gauges, and histograms above it, and no HTTP.
 
 The exposition bytes are the part every service writes by hand, and they are
 where the bugs are. One unescaped newline in a label value takes down every
@@ -32,7 +32,7 @@ whether a family has help text are the caller's business, and the primitives
 underneath (`Writer.help`, `kind`, `name`, `value`, `line`) are public so a
 caller can compose a shape this library does not have.
 
-The API is pre-1.0: pin the commit, and expect it to move.
+The API is pre-1.0: pin a version, and expect it to move.
 
 ## What is in it
 
@@ -67,13 +67,19 @@ const metrics = b.dependency("metrics", .{ .target = target, .optimize = optimiz
 exe.root_module.addImport("metrics", metrics.module("metrics"));
 ```
 
-No std namespace is named `metrics`, so nothing needs an alias. A program that already binds `metrics` to something of its own
-imports the format instead of the package — `const prometheus = @import("metrics").prometheus;`
-— and call sites read `prometheus.Writer` as before. One that wants the
+No std namespace is named `metrics`, so nothing needs an alias. A program that
+already binds `metrics` to something of its own imports the format instead of
+the package:
+
+```zig
+const prometheus = @import("metrics").prometheus;
+```
+
+Call sites then read `prometheus.Writer` as before. One that wants the
 recording types too imports the package as `metricsx`, the org's rule for a
-shadowed name. `metrics` builds with Zig 0.17. It has one dependency, `testingx`, marked lazy
-and used only after `build.zig` returns for a consumer, so a consumer's fetch
-graph is the module and nothing else.
+shadowed name. `metrics` builds with Zig 0.17. It has one dependency,
+`testingx`, marked lazy and used only after `build.zig` returns for a
+consumer, so a consumer's fetch graph is the module and nothing else.
 
 ## Documentation
 

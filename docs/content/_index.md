@@ -2,7 +2,7 @@
 title = "metrics"
 +++
 
-Prometheus text exposition format for Zig: write metrics to any writer, no HTTP.
+Prometheus text exposition for Zig: write metrics to any writer, with counters, gauges, and histograms above it, and no HTTP.
 
 The exposition bytes are the part every service writes by hand, and they are
 where the bugs are. One unescaped newline in a label value takes down every

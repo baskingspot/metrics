@@ -4,7 +4,7 @@
 base_url = "https://baskingspot.dev/metrics"
 theme = "baskingspot"
 title = "metrics"
-description = "Prometheus text exposition format for Zig: write metrics to any writer, no HTTP."
+description = "Prometheus text exposition for Zig: write metrics to any writer, with counters, gauges, and histograms above it, and no HTTP."
 
 generate_feeds = false
 build_search_index = false
