@@ -5,6 +5,8 @@ All notable changes to metrics are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-24
+
 ### Added
 
 - `histogram.Fixed(...).merge(other)` adds a local histogram's buckets, count, and sum into another.
