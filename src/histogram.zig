@@ -48,6 +48,10 @@ pub fn Fixed(comptime S: type, comptime bounds: []const f64) type {
         /// slots need it filled; a local histogram can take `counts` and skip
         /// the copy.
         pub const Snapshot = struct {
+            /// The bounds this snapshot counts, so a writer can take a folded
+            /// `Snapshot` where it takes the histogram it came from.
+            pub const Bounds = bounds;
+
             buckets: [bounds.len]u64,
             observed: u64,
             total: u64,
@@ -395,6 +399,12 @@ test "a histogram merged with itself doubles, because it may alias" {
     try testing.expectEqualSlices(u64, &.{ 2, 4 }, twice.counts());
     try testing.expectEqual(@as(u64, 4), twice.observed.get());
     try testing.expectEqual(@as(u64, 110), twice.total.get());
+}
+
+test "a snapshot names the bounds it was folded from" {
+    const Histogram = Fixed(counter.Local(u64), &.{ 1, 10, 100 });
+    try testing.expectEqualSlices(f64, Histogram.Bounds, Histogram.Snapshot.Bounds);
+    try testing.expectEqual(Histogram.Bounds.ptr, Histogram.Snapshot.Bounds.ptr);
 }
 
 test "a snapshot merge and a histogram merge agree" {

@@ -10,6 +10,7 @@ All notable changes to metrics are recorded here. The format follows
 - `histogram.Fixed(...).merge(other)` adds a local histogram's buckets, count, and sum into another.
 - `histogram.Fixed(...).mergeAll(histograms)` folds a slice of local histograms into the `Snapshot` a scrape writes, in one call.
 - `Snapshot.zero`, `Snapshot.merge(other)`, and `Snapshot.mergeAll(snapshots)` do the same for the snapshots an atomic histogram fills.
+- `Snapshot.Bounds` names the bounds a snapshot counts, the same decl `Fixed` carries, so a writer can take either without its type threaded alongside.
 
 ## [0.4.0] - 2026-11-16
 
