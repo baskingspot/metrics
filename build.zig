@@ -72,11 +72,11 @@ pub fn build(b: *std.Build) void {
     // step is defined; the build runner fetches it and reruns this script.
     if (b.lazyImport(@This(), "testingx")) |testingx| {
         const bench_dep = (b.dependencyLazy("testingx", .{ .target = target }) catch null).?;
-        const bench_step = b.step("bench", "Run the encode benchmarks (ReleaseFast)");
+        const bench_step = b.step("bench", "Run the benchmarks (ReleaseFast)");
         const run_bench = testingx.addBench(b, .{
-            .name = "bench-encode",
+            .name = "bench",
             .module = bench_dep.module("testingx"),
-            .root_source_file = b.path("bench/encode.zig"),
+            .root_source_file = b.path("bench/root.zig"),
             .imports = &.{.{ .name = "metrics", .module = mod }},
         });
         run_bench.addPassthruArgs();

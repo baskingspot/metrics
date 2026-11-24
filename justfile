@@ -81,12 +81,12 @@ check-golden:
     done
     echo "golden: $(ls "$out" | wc -l | tr -d ' ') documents accepted by prom2json"
 
-[doc("Run the encode benchmarks in ReleaseFast through testingx, reporting bytes per second. Pass --count=N to repeat")]
+[doc("Run the benchmarks in ReleaseFast through testingx: the writer and the histogram fold, both reported as bytes per second. Pass --count=N to repeat")]
 [group("test")]
 bench:
     zig build bench -- --count=5
 
-[doc("Build and run the encode benchmark once, so a benchmark that stops compiling fails CI")]
+[doc("Build and run the benchmarks once, so a benchmark that stops compiling fails CI")]
 [group("ci")]
 check-bench:
     zig build bench -- --count=1
