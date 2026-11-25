@@ -5,6 +5,10 @@ All notable changes to metrics are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- `histogram.Fixed.mergeAll` takes a slice of pointers (`[]const *const Histogram`) instead of a slice of histograms, so a worker's histogram can stay in the worker's struct. Add `&` to each element of an existing call; `Snapshot.mergeAll` still takes a slice of snapshots.
+
 ## [0.5.0] - 2026-11-24
 
 ### Added

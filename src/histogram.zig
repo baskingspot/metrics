@@ -18,8 +18,8 @@
 //!
 //! A histogram is additive, which is what a per-worker collect-then-aggregate
 //! scrape needs: `merge` adds one histogram into another and `mergeAll` folds a
-//! slice of them into one `Snapshot`, adding the buckets, the count, and the
-//! sum. Both wrap like the counters they add, and neither takes a lock.
+//! run of them into one `Snapshot`, adding the buckets, the count, and the sum.
+//! Both wrap like the counters they add, and neither takes a lock.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -135,10 +135,15 @@ pub fn Fixed(comptime S: type, comptime bounds: []const f64) type {
         /// merged in turn, and handed back as the snapshot a scrape writes.
         /// One call holds the total in registers instead of writing it back
         /// per `merge`.
-        pub fn mergeAll(histograms: []const Self) Snapshot {
+        ///
+        /// A pointer per histogram, the same thing `merge` takes, because a
+        /// worker's histogram is usually a field of the worker's own struct
+        /// and not next to the next worker's. A slice of histograms would make
+        /// the caller copy them into one array to fold them.
+        pub fn mergeAll(histograms: []const *const Self) Snapshot {
             comptime assert(!is_atomic);
             var out: Snapshot = .zero;
-            for (histograms) |*histogram| {
+            for (histograms) |histogram| {
                 addBuckets(bounds.len, &out.buckets, bucketWords(histogram));
                 out.observed +%= histogram.observed.get();
                 out.total +%= histogram.total.get();
@@ -315,7 +320,7 @@ test "empty bounds are legal and keep only the count" {
     // A fold over histograms with no buckets is the count and the sum alone.
     var folded: Histogram = .zero;
     folded.observe(1);
-    const total = Histogram.mergeAll(&.{ histogram, folded });
+    const total = Histogram.mergeAll(&.{ &histogram, &folded });
     try testing.expectEqual(@as(usize, 0), total.buckets.len);
     try testing.expectEqual(@as(u64, 3), total.observed);
     try testing.expectEqual(@as(u64, 17), total.total);
@@ -447,7 +452,10 @@ test "a fold is the merge loop, count for count" {
     var snapshots: [workers.len]Histogram.Snapshot = undefined;
     for (&workers, 0..) |*histogram, i| histogram.snapshot(&snapshots[i]);
 
-    const folded = Histogram.mergeAll(&workers);
+    var pointers: [workers.len]*const Histogram = undefined;
+    for (&workers, 0..) |*histogram, i| pointers[i] = histogram;
+
+    const folded = Histogram.mergeAll(&pointers);
     const folded_snapshots = Histogram.Snapshot.mergeAll(&snapshots);
 
     var from_loop: Histogram.Snapshot = undefined;
@@ -508,7 +516,10 @@ test "a fold past a vector boundary still adds every bucket" {
             histogram.total.add(i + 1);
         }
 
-        const folded = Histogram.mergeAll(&workers);
+        var pointers: [workers.len]*const Histogram = undefined;
+        for (&workers, 0..) |*histogram, i| pointers[i] = histogram;
+
+        const folded = Histogram.mergeAll(&pointers);
         // Bucket `b` holds 1 + 2 + 3 observations and every bucket above it
         // holds at least as many, because nothing observed exceeds a bound.
         for (folded.buckets) |count| try testing.expectEqual(@as(u64, 6), count);

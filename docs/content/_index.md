@@ -218,7 +218,7 @@ petabytes of bytes or 104 days of microseconds, and approximate above it. Empty
 bounds are legal and produce a single `+Inf` bucket.
 
 A histogram is additive, which is what a per-worker scrape needs. `merge` adds
-one histogram into another, and `mergeAll` folds a slice of them into a
+one histogram into another, and `mergeAll` folds a run of them into a
 `Snapshot`, adding the buckets, the count, and the sum. Neither allocates,
 neither locks, and both wrap at `maxInt(u64)` like the counters they add.
 
@@ -226,11 +226,17 @@ neither locks, and both wrap at `maxInt(u64)` like the counters they add.
 {{ load_data(path = "examples/histogram_fold.zig", format = "plain") | trim_end }}
 ```
 
+`mergeAll` takes a pointer per histogram, the same thing `merge` takes: a
+worker's histogram is a field of the worker's own struct, and a slice of values
+would make every caller copy them into one array first. `Snapshot.mergeAll`
+takes the snapshots themselves, because those are a buffer the caller just
+filled.
+
 `merge` is the primitive: each call writes the total back to memory and the
-next one reads it again. `mergeAll` over the whole slice is the same arithmetic
-with the total in registers, and it is worth about twice the loop. `just bench`
-on a Neoverse V3 measures 14 ns for the fold against 38 ns for the loop, over
-sixteen workers of twelve buckets. Fold the slice when the histograms are all
+next one reads it again. `mergeAll` is the same arithmetic with the total in
+registers, which is worth about twice the loop: `just bench` on a Neoverse V3
+measures 14 ns for the fold, pointer array included, against 38 ns for the
+loop, over sixteen workers of twelve buckets. Fold when the histograms are all
 in hand; merge in a loop when they arrive one at a time.
 
 ## What is checked, and what is not

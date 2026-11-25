@@ -56,7 +56,8 @@ fn MergeLoop(comptime buckets: usize) type {
     };
 }
 
-/// `mergeAll` over the slice: the accumulator stays in registers.
+/// `mergeAll` over the slice: the accumulator stays in registers. The pointer
+/// array is built inside the timed body, because a scrape does that too.
 fn MergeFold(comptime buckets: usize) type {
     return struct {
         fn run(b: *testingx.B) anyerror!void {
@@ -68,7 +69,9 @@ fn MergeFold(comptime buckets: usize) type {
 
             while (try b.loop()) {
                 const source = b.blackBox(&all);
-                acc = Histogram(buckets).mergeAll(source);
+                var pointers: [workers]*const Histogram(buckets) = undefined;
+                for (source, 0..) |*one, i| pointers[i] = one;
+                acc = Histogram(buckets).mergeAll(&pointers);
             }
             b.setBytes(@intCast(buckets * 8 * workers));
         }
