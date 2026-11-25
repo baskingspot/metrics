@@ -1,6 +1,6 @@
 .{
     .name = .metrics,
-    .version = "0.5.0",
+    .version = "0.6.0",
     .fingerprint = 0x228aaae770208a4d, // Changing this has security and trust implications.
     // The build floor, and the toolchain `.github/ci.yaml` runs: 0.17.
     .minimum_zig_version = "0.17.0",
