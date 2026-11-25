@@ -115,7 +115,7 @@ pub fn Fixed(comptime S: type, comptime bounds: []const f64) type {
         /// histogram's own bytes rather than a copy.
         pub fn counts(self: *const Self) []const u64 {
             comptime assert(!is_atomic);
-            return bucketWords(self);
+            return bucketWordsConst(self);
         }
 
         /// One observation of `v`. Every bucket whose bound is at or above `v`
@@ -137,7 +137,7 @@ pub fn Fixed(comptime S: type, comptime bounds: []const f64) type {
         /// may be the same histogram, which doubles it.
         pub fn merge(self: *Self, other: *const Self) void {
             comptime assert(!is_atomic);
-            addBuckets(bounds.len, bucketWordsMut(self), bucketWords(other));
+            addBuckets(bounds.len, bucketWords(self), bucketWordsConst(other));
             self.observed.add(other.observed.get());
             self.total.add(other.total.get());
         }
@@ -169,24 +169,31 @@ pub fn Fixed(comptime S: type, comptime bounds: []const f64) type {
         /// One histogram's numbers added into a snapshot, which is the whole
         /// body of both folds.
         fn foldInto(histogram: *const Self, out: *Snapshot) void {
-            addBuckets(bounds.len, &out.buckets, bucketWords(histogram));
+            addBuckets(bounds.len, &out.buckets, bucketWordsConst(histogram));
             out.observed +%= histogram.observed.get();
             out.total +%= histogram.total.get();
         }
 
-        /// The buckets as plain words, borrowed. A slot is one integer with
-        /// nothing beside it, so this is the histogram's own storage rather
-        /// than a copy, and the length is the bound count.
-        fn bucketWords(self: *const Self) *const [bounds.len]u64 {
-            comptime assert(!is_atomic);
-            comptime assert(@sizeOf(Slot) == @sizeOf(u64));
-            comptime assert(@alignOf(Slot) == @alignOf(u64));
+        /// The buckets as plain words, borrowed and writable, which is what a
+        /// merge adds into.
+        fn bucketWords(self: *Self) *[bounds.len]u64 {
+            comptime checkSlots();
             return @ptrCast(&self.buckets);
         }
 
-        /// The same view, writable. Anything holding `*Self` may write it.
-        fn bucketWordsMut(self: *Self) *[bounds.len]u64 {
-            return @constCast(bucketWords(self));
+        /// The same view, read-only, which is what `counts` hands out and what
+        /// a fold reads.
+        fn bucketWordsConst(self: *const Self) *const [bounds.len]u64 {
+            comptime checkSlots();
+            return @ptrCast(&self.buckets);
+        }
+
+        /// What makes a slot readable as a plain word: one integer per slot
+        /// with no padding, and not atomic, where a plain read would race.
+        fn checkSlots() void {
+            comptime assert(!is_atomic);
+            comptime assert(@sizeOf(Slot) == @sizeOf(u64));
+            comptime assert(@alignOf(Slot) == @alignOf(u64));
         }
 
         /// A histogram with nothing observed.
