@@ -26,7 +26,7 @@ test "per-worker histograms folded into one series" {
     try w.writeHistogram(
         .{ .name = "message_size_bytes", .kind = .histogram },
         .{ .direction = "inbound" },
-        Histogram.Bounds,
+        Histogram.limits,
         &total.buckets,
         total.total,
         total.observed,

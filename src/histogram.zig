@@ -39,7 +39,8 @@ pub fn Fixed(comptime S: type, comptime bounds: []const f64) type {
     return struct {
         const Self = @This();
 
-        pub const Bounds = bounds;
+        /// The bucket limits, the array `writeHistogram` takes.
+        pub const limits = bounds;
         pub const Slot = S;
 
         const is_atomic = S.atomic;
@@ -50,9 +51,9 @@ pub fn Fixed(comptime S: type, comptime bounds: []const f64) type {
         /// slots need it filled; a local histogram can take `counts` and skip
         /// the copy.
         pub const Snapshot = struct {
-            /// The bounds this snapshot counts, so a writer can take a folded
-            /// `Snapshot` where it takes the histogram it came from.
-            pub const Bounds = bounds;
+            /// The bucket limits this snapshot counts, so a writer can take a
+            /// folded `Snapshot` where it takes the histogram it came from.
+            pub const limits = bounds;
 
             buckets: [bounds.len]u64,
             observed: u64,
@@ -436,10 +437,10 @@ test "a histogram merged with itself doubles, because it may alias" {
     try testing.expectEqual(@as(u64, 110), twice.total.get());
 }
 
-test "a snapshot names the bounds it was folded from" {
+test "a snapshot names the limits it was folded from" {
     const Histogram = Fixed(counter.Local(u64), &.{ 1, 10, 100 });
-    try testing.expectEqualSlices(f64, Histogram.Bounds, Histogram.Snapshot.Bounds);
-    try testing.expectEqual(Histogram.Bounds.ptr, Histogram.Snapshot.Bounds.ptr);
+    try testing.expectEqualSlices(f64, Histogram.limits, Histogram.Snapshot.limits);
+    try testing.expectEqual(Histogram.limits.ptr, Histogram.Snapshot.limits.ptr);
 }
 
 test "a snapshot merge and a histogram merge agree" {

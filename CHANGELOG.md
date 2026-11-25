@@ -9,6 +9,10 @@ All notable changes to metrics are recorded here. The format follows
 
 - `mergeAllPtrs` on both `histogram.Fixed` and `Snapshot` folds a slice of pointers, so a histogram or snapshot that lives in another struct does not have to be copied into an array to be folded. `mergeAll` still takes a slice of values, and the two agree count for count.
 
+### Changed
+
+- `Fixed.Bounds` and `Snapshot.Bounds` are `limits`, lowercase because they hold a value and not a type.
+
 ## [0.5.0] - 2026-11-24
 
 ### Added
@@ -16,7 +20,7 @@ All notable changes to metrics are recorded here. The format follows
 - `histogram.Fixed(...).merge(other)` adds a local histogram's buckets, count, and sum into another.
 - `histogram.Fixed(...).mergeAll(histograms)` folds a slice of local histograms into the `Snapshot` a scrape writes, in one call.
 - `Snapshot.zero`, `Snapshot.merge(other)`, and `Snapshot.mergeAll(snapshots)` do the same for the snapshots an atomic histogram fills.
-- `Snapshot.Bounds` names the bounds a snapshot counts, the same decl `Fixed` carries, so a writer can take either without its type threaded alongside.
+- `Snapshot.limits` names the bucket limits a snapshot counts, the same decl `Fixed` carries, so a writer can take either without its type threaded alongside.
 
 ## [0.4.0] - 2026-11-16
 
