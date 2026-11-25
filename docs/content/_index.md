@@ -226,11 +226,11 @@ neither locks, and both wrap at `maxInt(u64)` like the counters they add.
 {{ load_data(path = "examples/histogram_fold.zig", format = "plain") | trim_end }}
 ```
 
-`mergeAll` takes a pointer per histogram, the same thing `merge` takes: a
-worker's histogram is a field of the worker's own struct, and a slice of values
-would make every caller copy them into one array first. `Snapshot.mergeAll`
-takes the snapshots themselves, because those are a buffer the caller just
-filled.
+`mergeAll` takes the histograms themselves, and `mergeAllPtrs` takes a pointer
+per histogram, for the one that lives in a field of the worker's own struct and
+is not next to the next worker's. Both agree count for count. `Snapshot` has
+the pair too: `mergeAll` over the buffer a scrape filled, `mergeAllPtrs` over
+snapshots that live somewhere else.
 
 `merge` is the primitive: each call writes the total back to memory and the
 next one reads it again. `mergeAll` is the same arithmetic with the total in

@@ -2,10 +2,12 @@
 //! the two shapes the API allows.
 //!
 //! `Merge/*/loop` is `merge` once per worker into one accumulator, which is the
-//! primitive. `Merge/*/fold` is `mergeAll` over the whole slice, which is the
-//! same arithmetic with the accumulator in registers instead of memory. The
-//! pair is the evidence for the difference the guide quotes, so it runs on
-//! every `just bench` and on every CI pass.
+//! primitive. `Merge/*/fold` is `mergeAllPtrs` over the whole run, which is the
+//! same arithmetic with the accumulator in registers instead of memory, pointer
+//! array included. It is the pointer form because that is the slower of the two
+//! folds, so the row is the conservative number. The pair is the evidence for
+//! the difference the guide quotes, so it runs on every `just bench` and on
+//! every CI pass.
 //!
 //! Bytes per second counts each bucket read once: `buckets * 8 * workers`. A
 //! worker count of sixteen is a full machine folding itself in.
@@ -56,8 +58,9 @@ fn MergeLoop(comptime buckets: usize) type {
     };
 }
 
-/// `mergeAll` over the slice: the accumulator stays in registers. The pointer
-/// array is built inside the timed body, because a scrape does that too.
+/// `mergeAllPtrs` over the run: the accumulator stays in registers. The
+/// pointer array is built inside the timed body, because a scrape does that
+/// too.
 fn MergeFold(comptime buckets: usize) type {
     return struct {
         fn run(b: *testingx.B) anyerror!void {
@@ -71,7 +74,7 @@ fn MergeFold(comptime buckets: usize) type {
                 const source = b.blackBox(&all);
                 var pointers: [workers]*const Histogram(buckets) = undefined;
                 for (source, 0..) |*one, i| pointers[i] = one;
-                acc = Histogram(buckets).mergeAll(&pointers);
+                acc = Histogram(buckets).mergeAllPtrs(&pointers);
             }
             b.setBytes(@intCast(buckets * 8 * workers));
         }

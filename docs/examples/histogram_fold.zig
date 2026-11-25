@@ -12,12 +12,13 @@ test "per-worker histograms folded into one series" {
     for (&workers) |*worker| worker.size.observe(512);
     workers[2].size.observe(1 << 21);
 
-    // A pointer per worker in worker order; no histogram is copied.
+    // A pointer per worker in worker order: no histogram is copied, and
+    // nothing has to sit next to anything else.
     var sizes: [workers.len]*const Histogram = undefined;
     for (&workers, 0..) |*worker, i| sizes[i] = &worker.size;
 
     // One call adds the buckets, the count, and the sum of every worker.
-    const total = Histogram.mergeAll(&sizes);
+    const total = Histogram.mergeAllPtrs(&sizes);
 
     var buffer: [4096]u8 = undefined;
     var out: std.Io.Writer = .fixed(&buffer);

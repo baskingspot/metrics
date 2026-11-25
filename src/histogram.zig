@@ -18,8 +18,10 @@
 //!
 //! A histogram is additive, which is what a per-worker collect-then-aggregate
 //! scrape needs: `merge` adds one histogram into another and `mergeAll` folds a
-//! run of them into one `Snapshot`, adding the buckets, the count, and the sum.
-//! Both wrap like the counters they add, and neither takes a lock.
+//! slice of them into one `Snapshot`, adding the buckets, the count, and the
+//! sum. `mergeAllPtrs` is the same fold over pointers, for histograms that live
+//! in another struct. All of it wraps like the counters it adds, and none of it
+//! takes a lock.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -83,6 +85,15 @@ pub fn Fixed(comptime S: type, comptime bounds: []const f64) type {
                 for (others) |*other| out.merge(other);
                 return out;
             }
+
+            /// `mergeAll` over a slice of pointers, for the snapshots that
+            /// live in another struct instead of in a buffer of their own. The
+            /// two agree count for count; only the indirection differs.
+            pub fn mergeAllPtrs(others: []const *const Snapshot) Snapshot {
+                var out: Snapshot = .zero;
+                for (others) |other| out.merge(other);
+                return out;
+            }
         };
 
         buckets: [bounds.len]S,
@@ -135,20 +146,32 @@ pub fn Fixed(comptime S: type, comptime bounds: []const f64) type {
         /// merged in turn, and handed back as the snapshot a scrape writes.
         /// One call holds the total in registers instead of writing it back
         /// per `merge`.
-        ///
-        /// A pointer per histogram, the same thing `merge` takes, because a
-        /// worker's histogram is usually a field of the worker's own struct
-        /// and not next to the next worker's. A slice of histograms would make
-        /// the caller copy them into one array to fold them.
-        pub fn mergeAll(histograms: []const *const Self) Snapshot {
+        pub fn mergeAll(histograms: []const Self) Snapshot {
             comptime assert(!is_atomic);
             var out: Snapshot = .zero;
-            for (histograms) |histogram| {
-                addBuckets(bounds.len, &out.buckets, bucketWords(histogram));
-                out.observed +%= histogram.observed.get();
-                out.total +%= histogram.total.get();
-            }
+            for (histograms) |*histogram| foldInto(histogram, &out);
             return out;
+        }
+
+        /// `mergeAll` over a slice of pointers, for the histograms that live
+        /// in another struct instead of in a run of their own: a worker's
+        /// histogram is a field of the worker's struct, not next to the next
+        /// worker's, and copying it into an array to fold it is the work this
+        /// avoids. The two agree count for count; only the indirection
+        /// differs.
+        pub fn mergeAllPtrs(histograms: []const *const Self) Snapshot {
+            comptime assert(!is_atomic);
+            var out: Snapshot = .zero;
+            for (histograms) |histogram| foldInto(histogram, &out);
+            return out;
+        }
+
+        /// One histogram's numbers added into a snapshot, which is the whole
+        /// body of both folds.
+        fn foldInto(histogram: *const Self, out: *Snapshot) void {
+            addBuckets(bounds.len, &out.buckets, bucketWords(histogram));
+            out.observed +%= histogram.observed.get();
+            out.total +%= histogram.total.get();
         }
 
         /// The buckets as plain words, borrowed. A slot is one integer with
@@ -320,7 +343,7 @@ test "empty bounds are legal and keep only the count" {
     // A fold over histograms with no buckets is the count and the sum alone.
     var folded: Histogram = .zero;
     folded.observe(1);
-    const total = Histogram.mergeAll(&.{ &histogram, &folded });
+    const total = Histogram.mergeAll(&.{ histogram, folded });
     try testing.expectEqual(@as(usize, 0), total.buckets.len);
     try testing.expectEqual(@as(u64, 3), total.observed);
     try testing.expectEqual(@as(u64, 17), total.total);
@@ -455,28 +478,39 @@ test "a fold is the merge loop, count for count" {
     var pointers: [workers.len]*const Histogram = undefined;
     for (&workers, 0..) |*histogram, i| pointers[i] = histogram;
 
-    const folded = Histogram.mergeAll(&pointers);
-    const folded_snapshots = Histogram.Snapshot.mergeAll(&snapshots);
+    var snapshot_pointers: [workers.len]*const Histogram.Snapshot = undefined;
+    for (&snapshots, 0..) |*snap, i| snapshot_pointers[i] = snap;
 
     var from_loop: Histogram.Snapshot = undefined;
     looped.snapshot(&from_loop);
-    try testing.expectEqualSlices(u64, &from_loop.buckets, &folded.buckets);
-    try testing.expectEqualSlices(u64, &from_loop.buckets, &folded_snapshots.buckets);
-    try testing.expectEqual(from_loop.observed, folded.observed);
-    try testing.expectEqual(from_loop.total, folded.total);
-    try testing.expectEqual(from_loop.observed, folded_snapshots.observed);
-    try testing.expectEqual(from_loop.total, folded_snapshots.total);
+
+    // Every entry point is the loop, count for count, and the value and
+    // pointer forms of a fold agree with each other.
+    const folds = [_]Histogram.Snapshot{
+        Histogram.mergeAll(&workers),
+        Histogram.mergeAllPtrs(&pointers),
+        Histogram.Snapshot.mergeAll(&snapshots),
+        Histogram.Snapshot.mergeAllPtrs(&snapshot_pointers),
+    };
+    for (folds) |folded| {
+        try testing.expectEqualSlices(u64, &from_loop.buckets, &folded.buckets);
+        try testing.expectEqual(from_loop.observed, folded.observed);
+        try testing.expectEqual(from_loop.total, folded.total);
+    }
 }
 
 test "a fold of nothing is the empty snapshot" {
     const Histogram = Fixed(counter.Local(u64), &.{ 1, 10 });
-    const folded = Histogram.mergeAll(&.{});
-    try testing.expectEqualSlices(u64, &.{ 0, 0 }, &folded.buckets);
-    try testing.expectEqual(@as(u64, 0), folded.observed);
-    try testing.expectEqual(@as(u64, 0), folded.total);
-
-    const none: []const Histogram.Snapshot = &.{};
-    try testing.expectEqualDeep(Histogram.Snapshot.zero, Histogram.Snapshot.mergeAll(none));
+    const folds = [_]Histogram.Snapshot{
+        Histogram.mergeAll(&.{}),
+        Histogram.mergeAllPtrs(&.{}),
+        Histogram.Snapshot.mergeAll(&.{}),
+        Histogram.Snapshot.mergeAllPtrs(&.{}),
+    };
+    for (folds) |folded| {
+        try testing.expectEqualDeep(Histogram.Snapshot.zero, folded);
+        try testing.expectEqualSlices(u64, &.{ 0, 0 }, &folded.buckets);
+    }
 }
 
 test "a merge wraps like the counters it adds" {
@@ -519,7 +553,7 @@ test "a fold past a vector boundary still adds every bucket" {
         var pointers: [workers.len]*const Histogram = undefined;
         for (&workers, 0..) |*histogram, i| pointers[i] = histogram;
 
-        const folded = Histogram.mergeAll(&pointers);
+        const folded = Histogram.mergeAllPtrs(&pointers);
         // Bucket `b` holds 1 + 2 + 3 observations and every bucket above it
         // holds at least as many, because nothing observed exceeds a bound.
         for (folded.buckets) |count| try testing.expectEqual(@as(u64, 6), count);
