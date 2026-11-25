@@ -49,7 +49,7 @@ fn Counter(comptime S: type) type {
         pub const ValueType = S.Value;
         /// True when the field is atomic, which decides whether a histogram can
         /// hand out its buckets as a slice.
-        pub const atomic: bool = S.atomic;
+        pub const atomic = S.atomic;
 
         value: S,
 
@@ -69,7 +69,7 @@ fn Counter(comptime S: type) type {
         }
 
         /// A counter at zero.
-        pub const zero: Self = .{ .value = S.zero };
+        pub const zero: Self = .{ .value = .zero };
     };
 }
 

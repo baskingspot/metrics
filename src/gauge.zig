@@ -88,7 +88,7 @@ fn Gauge(comptime S: type) type {
         }
 
         /// A gauge at zero.
-        pub const zero: Self = .{ .value = S.zero };
+        pub const zero: Self = .{ .value = .zero };
     };
 }
 

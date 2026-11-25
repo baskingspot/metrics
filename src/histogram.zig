@@ -24,10 +24,10 @@
 //! takes a lock.
 
 const std = @import("std");
-const builtin = @import("builtin");
 const testing = std.testing;
 const assert = std.debug.assert;
 const math = std.math;
+const builtin = @import("builtin");
 
 const counter = @import("counter.zig");
 
@@ -221,10 +221,11 @@ else
 /// scalar for each count that does not fill one. Wrapping, because the counts
 /// are counters.
 fn addBuckets(comptime n: usize, dest: *[n]u64, src: *const [n]u64) void {
+    const Vec = @Vector(lanes, u64);
     comptime var i: usize = 0;
     inline while (i + lanes <= n) : (i += lanes) {
-        const a: @Vector(lanes, u64) = dest[i..][0..lanes].*;
-        const b: @Vector(lanes, u64) = src[i..][0..lanes].*;
+        const a: Vec = dest[i..][0..lanes].*;
+        const b: Vec = src[i..][0..lanes].*;
         dest[i..][0..lanes].* = a +% b;
     }
     inline while (i < n) : (i += 1) dest[i] +%= src[i];
